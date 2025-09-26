@@ -1,0 +1,53 @@
+[
+  {
+    "inputs": [
+      {"name": "tokenA", "type": "address"},
+      {"name": "tokenB", "type": "address"},
+      {"name": "amountA", "type": "uint256"},
+      {"name": "amountB", "type": "uint256"}
+    ],
+    "name": "addLiquidity",
+    "outputs": [{"name": "liquidity", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "tokenIn", "type": "address"},
+      {"name": "tokenOut", "type": "address"},
+      {"name": "amountIn", "type": "uint256"},
+      {"name": "minAmountOut", "type": "uint256"}
+    ],
+    "name": "swap",
+    "outputs": [{"name": "amountOut", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "tokenA", "type": "address"},
+      {"name": "tokenB", "type": "address"},
+      {"name": "liquidity", "type": "uint256"}
+    ],
+    "name": "removeLiquidity",
+    "outputs": [
+      {"name": "amountA", "type": "uint256"},
+      {"name": "amountB", "type": "uint256"}
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "tokenA", "type": "address"},
+      {"name": "tokenB", "type": "address"}
+    ],
+    "name": "getReserves",
+    "outputs": [
+      {"name": "reserveA", "type": "uint256"},
+      {"name": "reserveB", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

@@ -1,0 +1,61 @@
+[package]
+name = "isa-wallet-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Blockchain core
+isa-chain-core = { path = "../../core/blockchain" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Cryptography
+sha2 = { workspace = true }
+secp256k1 = { workspace = true }
+ed25519-dalek = { workspace = true }
+ring = "0.17"
+aes-gcm = "0.10"
+pbkdf2 = "0.12"
+scrypt = "0.11"
+
+# BIP standards
+bip32 = "0.5"
+bip39 = "2.0"
+bech32 = "0.9"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Utilities
+hex = "0.4"
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+zeroize = { version = "1.6", features = ["zeroize_derive"] }
+
+# Storage
+dirs = "5.0"
+sled = "0.34"
+
+# Time
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = ["std"]
+std = []
+no-std = []
+hardware = ["ledger", "trezor"]
+ledger = []
+trezor = []
