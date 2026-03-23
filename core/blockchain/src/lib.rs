@@ -11,6 +11,7 @@ pub mod state;
 pub mod mempool;
 pub mod validator;
 pub mod error;
+pub mod token;
 
 pub use types::*;
 pub use block::*;
@@ -19,3 +20,4 @@ pub use account::*;
 pub use blockchain::*;
 pub use consensus::*;
 pub use error::*;
+pub use token::*;
