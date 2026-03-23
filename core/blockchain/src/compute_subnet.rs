@@ -124,6 +124,7 @@ impl ComputeSubnet {
     ///
     /// The `escrow_amount` is derived from `max_price * duration_secs / 3600`
     /// so callers don't need to compute it separately.
+    #[allow(clippy::too_many_arguments)]
     pub fn submit_job(
         &mut self,
         job_id: Hash,

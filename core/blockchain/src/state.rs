@@ -88,10 +88,7 @@ impl WorldState {
     ///
     /// Marks the account dirty.
     pub fn get_or_create_account(&mut self, address: Address) -> &mut Account {
-        if !self.accounts.contains_key(&address) {
-            let account = Account::new_external(0);
-            self.accounts.insert(address, account);
-        }
+        self.accounts.entry(address).or_insert_with(|| Account::new_external(0));
         self.dirty.insert(address);
         self.accounts.get_mut(&address).expect("just inserted")
     }

@@ -106,6 +106,7 @@ pub struct Block {
 
 impl Block {
     /// Create a new block
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         height: BlockHeight,
         parent_hash: Hash,
@@ -275,7 +276,7 @@ impl Block {
 /// Genesis block creation
 impl Block {
     /// Create the genesis block
-    pub fn genesis(chain_id: ChainId) -> Self {
+    pub fn genesis(_chain_id: ChainId) -> Self {
         let genesis_address = Address::ZERO;
         let genesis_transactions = vec![]; // Genesis block has no transactions
         

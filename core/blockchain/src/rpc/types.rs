@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use crate::types::{Hash, Address};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

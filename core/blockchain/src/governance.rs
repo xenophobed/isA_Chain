@@ -162,6 +162,7 @@ impl SubnetGovernor {
     /// # Errors
     /// * `InsufficientStake` — `proposer_stake` < `self.min_proposal_stake`
     /// * `InvalidProposal` — `title` or `description` is empty
+    #[allow(clippy::too_many_arguments)]
     pub fn create_proposal(
         &mut self,
         subnet_id: SubnetId,
@@ -207,7 +208,7 @@ impl SubnetGovernor {
 
         self.proposals_by_subnet
             .entry(subnet_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(id);
 
         self.proposals.insert(id, proposal);

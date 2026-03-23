@@ -301,7 +301,7 @@ impl P2PNetwork {
     /// Return the `count` most-recent messages from the log.
     pub fn get_recent_messages(&self, count: usize) -> Vec<&(GossipMessage, Timestamp)> {
         let len = self.message_log.len();
-        let start = if len > count { len - count } else { 0 };
+        let start = len.saturating_sub(count);
         self.message_log[start..].iter().collect()
     }
 }

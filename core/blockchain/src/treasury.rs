@@ -1,4 +1,4 @@
-use crate::types::{Address, Amount, BlockHeight, constants::PROTOCOL_FEE_PERCENT};
+use crate::types::{Address, Amount, BlockHeight};
 
 /// Errors related to treasury operations
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -194,7 +194,7 @@ impl ProtocolTreasury {
             return Err(TreasuryError::ZeroAmount);
         }
 
-        let mut recipients: Vec<(Address, Amount)> = stakers
+        let recipients: Vec<(Address, Amount)> = stakers
             .iter()
             .filter_map(|(addr, stake)| {
                 let share = total_to_distribute * stake / total_stake;
@@ -259,7 +259,7 @@ impl ProtocolTreasury {
             return Err(TreasuryError::ZeroAmount);
         }
 
-        let mut staker_recipients: Vec<(Address, Amount)> = stakers
+        let staker_recipients: Vec<(Address, Amount)> = stakers
             .iter()
             .filter_map(|(addr, stake)| {
                 let share = staker_total * stake / total_stake;
@@ -351,6 +351,7 @@ impl ProtocolTreasury {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::constants::PROTOCOL_FEE_PERCENT;
 
     fn admin() -> Address {
         Address::from([0xAA; 20])

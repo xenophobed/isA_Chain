@@ -315,7 +315,7 @@ impl SubnetRegistry {
 
         self.provider_subnets
             .entry(address)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(subnet_id);
 
         Ok(())

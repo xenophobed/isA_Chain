@@ -154,11 +154,6 @@ impl SettlementBridge {
         }
     }
 
-    /// Create a bridge with default configuration.
-    pub fn default() -> Self {
-        Self::new(BridgeConfig::default())
-    }
-
     // -----------------------------------------------------------------------
     // Ingestion
     // -----------------------------------------------------------------------
@@ -319,6 +314,12 @@ impl SettlementBridge {
             self.event_queue.push(event);
         }
         requeued
+    }
+}
+
+impl Default for SettlementBridge {
+    fn default() -> Self {
+        Self::new(BridgeConfig::default())
     }
 }
 

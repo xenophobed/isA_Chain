@@ -20,8 +20,8 @@ pub struct NodeConfig {
     pub produce_empty_blocks: bool,
 }
 
-impl NodeConfig {
-    pub fn default() -> Self {
+impl Default for NodeConfig {
+    fn default() -> Self {
         Self {
             chain_id: crate::types::constants::MAIN_CHAIN_ID,
             rpc_port: 9944,
@@ -32,6 +32,9 @@ impl NodeConfig {
             produce_empty_blocks: false,
         }
     }
+}
+
+impl NodeConfig {
 
     /// Read configuration from environment variables, falling back to defaults.
     ///

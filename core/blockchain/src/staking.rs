@@ -65,7 +65,7 @@ impl StakingVault {
     ///
     /// * `min_stake`        — minimum ISA required for an initial `stake()` call.
     /// * `unbonding_period` — blocks that must elapse before `complete_unbonding`
-    ///                        releases funds.
+    ///   releases funds.
     pub fn new(min_stake: Amount, unbonding_period: u64) -> Self {
         StakingVault {
             stakes: HashMap::new(),
@@ -232,7 +232,7 @@ impl StakingVault {
         let effective_bps = percent_bps.min(MAX_SLASH_PERCENT);
 
         // slash_amount = stake * bps / 10_000  (integer, rounds down)
-        let slash_amount = (entry.amount as u128)
+        let slash_amount = entry.amount
             .saturating_mul(effective_bps as u128)
             / 10_000;
 

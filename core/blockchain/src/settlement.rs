@@ -1,5 +1,4 @@
 use crate::types::{Address, Amount, BlockHeight, Hash, Timestamp};
-use crate::types::constants::PROTOCOL_FEE_PERCENT;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -304,6 +303,7 @@ impl SettlementEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::constants::PROTOCOL_FEE_PERCENT;
 
     // ---- Helpers -------------------------------------------------------
 

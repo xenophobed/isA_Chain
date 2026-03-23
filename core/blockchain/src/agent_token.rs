@@ -182,11 +182,7 @@ impl BondingCurve {
                 let addition = numerator / slope;
                 let new_sq = old_sq + addition;
                 let new_supply = isqrt(new_sq);
-                if new_supply <= current_supply {
-                    0
-                } else {
-                    new_supply - current_supply
-                }
+                new_supply.saturating_sub(current_supply)
             }
             BondingCurve::Quadratic { coefficient } => {
                 if *coefficient == 0 {
@@ -209,7 +205,7 @@ fn isqrt(n: u128) -> u128 {
         return 0;
     }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;
@@ -226,7 +222,7 @@ fn binary_search_tokens(curve: &BondingCurve, current_supply: Amount, isa_amount
     hi = (isa_amount / price + 1).min(hi);
 
     while lo < hi {
-        let mid = lo + (hi - lo + 1) / 2;
+        let mid = lo + (hi - lo).div_ceil(2);
         let cost = curve.buy_cost(current_supply, mid);
         if cost <= isa_amount {
             lo = mid;

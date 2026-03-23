@@ -150,6 +150,7 @@ impl CreditBillingEngine {
     /// 4. `credit_balance >= credits` (returns [`CreditBillingError::InsufficientCredits`])
     ///
     /// On success, records the billing event and updates all indexes/totals.
+    #[allow(clippy::too_many_arguments)]
     pub fn charge(
         &mut self,
         user: Address,

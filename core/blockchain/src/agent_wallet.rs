@@ -132,6 +132,7 @@ impl AgentWalletFactory {
     ///
     /// Returns the newly created wallet's address, or an error if the agent
     /// already has a wallet.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_wallet(
         &mut self,
         agent_id: Hash,

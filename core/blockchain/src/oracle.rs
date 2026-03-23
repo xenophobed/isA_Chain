@@ -297,11 +297,7 @@ impl PriceOracle {
         }
 
         // Calculate absolute difference
-        let diff = if new_price > current {
-            new_price - current
-        } else {
-            current - new_price
-        };
+        let diff = new_price.abs_diff(current);
 
         // deviation_bps = diff * 10_000 / current
         let deviation_bps = diff

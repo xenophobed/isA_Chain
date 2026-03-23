@@ -176,6 +176,7 @@ impl FallbackManager {
     /// - `available_balance` — user's current on-chain ISA balance.
     /// - `credit_balance` — user's current off-chain credit balance.
     /// - `height` — current block height.
+    #[allow(clippy::too_many_arguments)]
     pub fn handle_shortfall(
         &mut self,
         settlement_id: Hash,

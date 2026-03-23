@@ -162,7 +162,7 @@ impl EmissionController {
             // subnet_amount = block_reward * weight / weight_sum
             // Use u128 arithmetic; weight_sum is at most 10 000 so no overflow risk.
             let subnet_amount: Amount =
-                (block_reward as u128 * weight as u128 / weight_sum as u128) as Amount;
+                block_reward * weight as u128 / weight_sum as u128;
 
             // --- Distribute within subnet by stake proportion ----------------
             let provider_shares = Self::split_by_stake(subnet_id, subnet_amount, provider_stakes);

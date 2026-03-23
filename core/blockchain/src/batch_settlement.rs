@@ -1,5 +1,4 @@
 use crate::types::{Address, Amount, BlockHeight, Hash};
-use crate::types::constants::PROTOCOL_FEE_PERCENT;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -322,6 +321,7 @@ impl BatchProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::constants::PROTOCOL_FEE_PERCENT;
 
     // -----------------------------------------------------------------------
     // Helpers

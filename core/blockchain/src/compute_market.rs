@@ -3,8 +3,6 @@
 //! This module handles the on-chain state for the decentralized compute marketplace.
 //! It manages provider registration, job lifecycle, escrow, and dispute resolution.
 
-use crate::error::BlockchainError;
-use crate::transaction::{TransactionData, TransactionError};
 use crate::types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -62,6 +60,7 @@ impl ComputeMarketState {
     // ========================================================================
 
     /// Register a new compute provider
+    #[allow(clippy::too_many_arguments)]
     pub fn register_provider(
         &mut self,
         address: Address,
@@ -199,6 +198,7 @@ impl ComputeMarketState {
     // ========================================================================
 
     /// Create a new compute job request
+    #[allow(clippy::too_many_arguments)]
     pub fn create_job(
         &mut self,
         job_id: Hash,
@@ -503,6 +503,7 @@ impl ComputeMarketState {
     }
 
     /// Resolve a dispute
+    #[allow(clippy::too_many_arguments)]
     pub fn resolve_dispute(
         &mut self,
         dispute_id: Hash,

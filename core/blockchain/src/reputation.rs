@@ -166,7 +166,7 @@ impl ReputationSystem {
         let record = self
             .records
             .get_mut(agent_id)
-            .ok_or_else(|| ReputationError::AgentNotFound(*agent_id))?;
+            .ok_or(ReputationError::AgentNotFound(*agent_id))?;
 
         record.total_interactions += 1;
         record.successful_interactions += 1;
@@ -203,7 +203,7 @@ impl ReputationSystem {
         let record = self
             .records
             .get_mut(agent_id)
-            .ok_or_else(|| ReputationError::AgentNotFound(*agent_id))?;
+            .ok_or(ReputationError::AgentNotFound(*agent_id))?;
 
         record.total_interactions += 1;
         record.failed_interactions += 1;
@@ -232,7 +232,7 @@ impl ReputationSystem {
         let record = self
             .records
             .get_mut(agent_id)
-            .ok_or_else(|| ReputationError::AgentNotFound(*agent_id))?;
+            .ok_or(ReputationError::AgentNotFound(*agent_id))?;
 
         let (delta, event_type) = if won {
             (DISPUTE_WIN_DELTA, ReputationEventType::DisputeWon)
@@ -264,7 +264,7 @@ impl ReputationSystem {
         let record = self
             .records
             .get_mut(agent_id)
-            .ok_or_else(|| ReputationError::AgentNotFound(*agent_id))?;
+            .ok_or(ReputationError::AgentNotFound(*agent_id))?;
 
         let delta = -(penalty_bps as i32);
         let new_score = apply_delta(record.score, delta);
@@ -292,7 +292,7 @@ impl ReputationSystem {
         let record = self
             .records
             .get_mut(agent_id)
-            .ok_or_else(|| ReputationError::AgentNotFound(*agent_id))?;
+            .ok_or(ReputationError::AgentNotFound(*agent_id))?;
 
         let delta = bonus_bps as i32;
         let new_score = apply_delta(record.score, delta);

@@ -116,6 +116,7 @@ impl BudgetManager {
     /// Create a new budget delegation.
     ///
     /// Returns the delegation ID (`Hash`) on success.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_delegation(
         &mut self,
         delegator: Address,
@@ -182,7 +183,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get_mut(delegation_id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*delegation_id))?;
+            .ok_or(BudgetError::DelegationNotFound(*delegation_id))?;
 
         // Status checks
         match &delegation.status {
@@ -256,7 +257,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get(id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*id))?;
+            .ok_or(BudgetError::DelegationNotFound(*id))?;
 
         if current_height > delegation.expires_at {
             return Ok(0);
@@ -270,7 +271,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get_mut(id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*id))?;
+            .ok_or(BudgetError::DelegationNotFound(*id))?;
 
         if &delegation.delegator != delegator {
             return Err(BudgetError::UnauthorizedDelegator(*delegator));
@@ -288,7 +289,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get_mut(id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*id))?;
+            .ok_or(BudgetError::DelegationNotFound(*id))?;
 
         if &delegation.delegator != delegator {
             return Err(BudgetError::UnauthorizedDelegator(*delegator));
@@ -306,7 +307,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get_mut(id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*id))?;
+            .ok_or(BudgetError::DelegationNotFound(*id))?;
 
         if &delegation.delegator != delegator {
             return Err(BudgetError::UnauthorizedDelegator(*delegator));
@@ -336,7 +337,7 @@ impl BudgetManager {
         let delegation = self
             .delegations
             .get_mut(id)
-            .ok_or_else(|| BudgetError::DelegationNotFound(*id))?;
+            .ok_or(BudgetError::DelegationNotFound(*id))?;
 
         if &delegation.delegator != delegator {
             return Err(BudgetError::UnauthorizedDelegator(*delegator));

@@ -61,11 +61,6 @@ impl ValidatorSet {
         self.validators.len() >= self.min_validators
     }
     
-    // TODO: Implement validator management
-    // - Validator rotation
-    // - Power distribution
-    // - Slashing mechanisms
-    // - Reward distribution
 }
 
 #[cfg(test)]

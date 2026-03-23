@@ -144,7 +144,7 @@ impl ProviderQualityOracle {
         }
 
         let key = (report.subnet_id, report.provider);
-        self.reports.entry(key).or_insert_with(Vec::new).push(report);
+        self.reports.entry(key).or_default().push(report);
 
         // Eagerly refresh the cached aggregate (best-effort; ignore
         // InsufficientReports — the cached value simply stays stale until

@@ -140,6 +140,7 @@ impl ProofStore {
     /// Fails with:
     /// - `DuplicateProof` if a proof for `settlement_id` already exists.
     /// - `DuplicateBillingEvent` if `billing_event_id` was already recorded.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_proof(
         &mut self,
         settlement_id: Hash,
@@ -220,7 +221,7 @@ impl ProofStore {
         let record = self
             .proofs
             .get_mut(proof_id)
-            .ok_or_else(|| SettlementProofError::ProofNotFound(*proof_id))?;
+            .ok_or(SettlementProofError::ProofNotFound(*proof_id))?;
 
         // Do not regress a Failed proof.
         if let ProofStatus::Failed(_) = &record.status {
@@ -296,7 +297,7 @@ impl ProofStore {
         let record = self
             .proofs
             .get(proof_id)
-            .ok_or_else(|| SettlementProofError::ProofNotFound(*proof_id))?;
+            .ok_or(SettlementProofError::ProofNotFound(*proof_id))?;
 
         match &record.status {
             ProofStatus::Confirmed | ProofStatus::Finalized => Ok(true),

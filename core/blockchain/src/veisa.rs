@@ -120,7 +120,7 @@ impl VeISASystem {
             return 0;
         }
         // Use u128 arithmetic throughout (Amount is u128).
-        (amount as u128)
+        amount
             .saturating_mul(remaining_blocks as u128)
             / (max_duration as u128)
     }

@@ -149,6 +149,7 @@ impl AgentRegistry {
 
     /// Register a new agent. Fails if the agent_id is already known, the name
     /// is empty, or no capabilities are provided.
+    #[allow(clippy::too_many_arguments)]
     pub fn register(
         &mut self,
         agent_id: Hash,
@@ -215,7 +216,7 @@ impl AgentRegistry {
         let registration = self
             .agents
             .get_mut(agent_id)
-            .ok_or_else(|| RegistryError::AgentNotFound(*agent_id))?;
+            .ok_or(RegistryError::AgentNotFound(*agent_id))?;
 
         if &registration.owner != owner {
             return Err(RegistryError::UnauthorizedOwner(*owner));
@@ -325,7 +326,7 @@ impl AgentRegistry {
         let registration = self
             .agents
             .get_mut(agent_id)
-            .ok_or_else(|| RegistryError::AgentNotFound(*agent_id))?;
+            .ok_or(RegistryError::AgentNotFound(*agent_id))?;
 
         if &registration.owner != owner {
             return Err(RegistryError::UnauthorizedOwner(*owner));
@@ -348,7 +349,7 @@ impl AgentRegistry {
         let registration = self
             .agents
             .get_mut(agent_id)
-            .ok_or_else(|| RegistryError::AgentNotFound(*agent_id))?;
+            .ok_or(RegistryError::AgentNotFound(*agent_id))?;
 
         if &registration.owner != owner {
             return Err(RegistryError::UnauthorizedOwner(*owner));
@@ -368,7 +369,7 @@ impl AgentRegistry {
         let registration = self
             .agents
             .get_mut(agent_id)
-            .ok_or_else(|| RegistryError::AgentNotFound(*agent_id))?;
+            .ok_or(RegistryError::AgentNotFound(*agent_id))?;
 
         registration.total_jobs += 1;
         if success {
@@ -394,7 +395,7 @@ impl AgentRegistry {
         let registration = self
             .agents
             .get_mut(agent_id)
-            .ok_or_else(|| RegistryError::AgentNotFound(*agent_id))?;
+            .ok_or(RegistryError::AgentNotFound(*agent_id))?;
 
         registration.reputation_score = score.min(10_000);
         Ok(())

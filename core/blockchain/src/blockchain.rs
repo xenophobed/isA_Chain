@@ -91,7 +91,7 @@ impl Blockchain {
                 let block = storage
                     .get_block_by_height(h)
                     .map_err(BlockchainError::Storage)?
-                    .ok_or_else(|| BlockchainError::Storage(StorageError::DataCorruption { height: h }))?;
+                    .ok_or(BlockchainError::Storage(StorageError::DataCorruption { height: h }))?;
 
                 let hash = block.hash();
                 if h == 0 { genesis_hash = hash; }
@@ -144,20 +144,6 @@ impl Blockchain {
         self.storage.is_some()
     }
 
-    /// Look up an account from the in-memory map, falling back to persistent
-    /// storage when available.  The result is cached in memory on first read.
-    fn load_account(&mut self, address: &Address) -> Option<&Account> {
-        if self.accounts.contains_key(address) {
-            return self.accounts.get(address);
-        }
-        if let Some(ref mut db) = self.storage {
-            if let Ok(Some(account)) = db.get_account(address) {
-                self.accounts.insert(*address, account);
-                return self.accounts.get(address);
-            }
-        }
-        None
-    }
 
     pub fn get_block(&self, hash: &Hash) -> Option<&Block> {
         self.blocks.get(hash)
@@ -260,8 +246,81 @@ impl Blockchain {
                     .and_modify(|acc| acc.balance += amount)
                     .or_insert_with(|| Account::new_external(*amount));
             }
+            crate::transaction::TransactionData::Stake { amount, .. } => {
+                // Deduct staked amount from sender; stake accounting is handled
+                // by StakingVault separately.
+                if sender_balance < *amount {
+                    return Err(ValidationError::InsufficientBalance.into());
+                }
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| {
+                        acc.balance -= amount;
+                        acc.nonce += 1;
+                    });
+            }
+            crate::transaction::TransactionData::Unstake { amount, .. } => {
+                // Return previously-staked amount to sender.
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| {
+                        acc.balance += amount;
+                        acc.nonce += 1;
+                    })
+                    .or_insert_with(|| Account::new_external(*amount));
+            }
+            crate::transaction::TransactionData::CreditPurchase { isa_amount, .. } => {
+                // Burn ISA from buyer to purchase credits (credits are off-chain).
+                if sender_balance < *isa_amount {
+                    return Err(ValidationError::InsufficientBalance.into());
+                }
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| {
+                        acc.balance -= isa_amount;
+                        acc.nonce += 1;
+                    });
+            }
+            crate::transaction::TransactionData::CreditSpend { .. } => {
+                // Credits are tracked off-chain; only increment nonce.
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| acc.nonce += 1);
+            }
+            crate::transaction::TransactionData::AgentWalletSpend { .. } => {
+                // Agent wallet balances are tracked off-chain; only increment nonce.
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| acc.nonce += 1);
+            }
+            crate::transaction::TransactionData::Settlement {
+                user,
+                provider,
+                gross_amount,
+                fee_amount,
+            } => {
+                // Deduct gross amount from user; net (gross - fee) goes to provider;
+                // fee goes to treasury address.
+                if sender_balance < *gross_amount {
+                    return Err(ValidationError::InsufficientBalance.into());
+                }
+                let net_amount = gross_amount.saturating_sub(*fee_amount);
+                self.accounts.entry(*user)
+                    .and_modify(|acc| {
+                        acc.balance -= gross_amount;
+                        acc.nonce += 1;
+                    });
+                self.accounts.entry(*provider)
+                    .and_modify(|acc| acc.balance += net_amount)
+                    .or_insert_with(|| Account::new_external(net_amount));
+                // Fee accrues to the treasury address (Address::ZERO — the admin
+                // address used when initialising the chain).
+                self.accounts.entry(Address::ZERO)
+                    .and_modify(|acc| acc.balance += fee_amount)
+                    .or_insert_with(|| Account::new_external(*fee_amount));
+            }
             _ => {
-                // TODO: Implement other transaction types
+                // For all other transaction variants: increment nonce and collect
+                // the gas fee.  No additional balance changes are applied at this
+                // layer — higher-level state machines (compute market, governance,
+                // etc.) handle their own invariants.
+                self.accounts.entry(tx.from)
+                    .and_modify(|acc| acc.nonce += 1);
             }
         }
 
@@ -575,5 +634,49 @@ mod tests {
         let result = bc.produce_block(100);
         assert!(result.is_ok());
         assert_eq!(bc.height, 1);
+    }
+
+    /// Settlement transaction: gross_amount deducted from user, net credited to
+    /// provider, fee credited to treasury (Address::ZERO in tests).
+    #[test]
+    fn test_execute_settlement_transaction() {
+        use crate::transaction::{Transaction, TransactionData};
+
+        let user_addr    = Address::from([0x01u8; 20]);
+        let provider_addr = Address::from([0x02u8; 20]);
+        let gross: Amount = 10_000;
+        let fee: Amount   = 250;
+        let net: Amount   = gross - fee; // 9_750
+
+        let mut bc = make_blockchain();
+        bc.mint(user_addr, gross);
+        assert_eq!(bc.get_balance(&user_addr), gross);
+
+        // Seed a nonce-0 account so the entry exists in the map.
+        bc.accounts.entry(user_addr)
+            .and_modify(|acc| acc.nonce = 0);
+
+        let tx = Transaction::new(
+            user_addr,
+            0,
+            TransactionData::Settlement {
+                user: user_addr,
+                provider: provider_addr,
+                gross_amount: gross,
+                fee_amount: fee,
+            },
+            21_000,
+            constants::BASE_GAS_PRICE,
+            constants::MAIN_CHAIN_ID,
+        );
+
+        assert!(bc.execute_transaction(&tx).is_ok());
+
+        // User balance fully drained.
+        assert_eq!(bc.get_balance(&user_addr), 0);
+        // Provider receives net amount.
+        assert_eq!(bc.get_balance(&provider_addr), net);
+        // Fee lands at treasury address (Address::ZERO).
+        assert_eq!(bc.get_balance(&Address::ZERO), fee);
     }
 }

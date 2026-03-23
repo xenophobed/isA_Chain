@@ -127,7 +127,7 @@ impl SubnetStakingManager {
 
         self.provider_subnets
             .entry(provider)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(subnet_id);
 
         Ok(())
@@ -249,7 +249,7 @@ impl SubnetStakingManager {
             .ok_or(SubnetStakingError::NoStakeFound)?;
 
         let effective_bps = percent_bps.min(MAX_SLASH_PERCENT);
-        let slash_amount = (entry.amount as u128)
+        let slash_amount = entry.amount
             .saturating_mul(effective_bps as u128)
             / 10_000;
 

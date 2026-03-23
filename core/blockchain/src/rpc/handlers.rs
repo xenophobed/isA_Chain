@@ -128,6 +128,7 @@ impl RpcHandler {
     // Helper: parse hex address from a params array slot
     // -----------------------------------------------------------------------
 
+    #[allow(clippy::result_large_err)]
     fn parse_address_param(params: &Value, index: usize) -> Result<Address, JsonRpcResponse> {
         let arr = params.as_array().ok_or_else(|| {
             JsonRpcResponse::error(
@@ -159,6 +160,7 @@ impl RpcHandler {
         })
     }
 
+    #[allow(clippy::result_large_err)]
     fn parse_hash_param(params: &Value, index: usize) -> Result<Hash, JsonRpcResponse> {
         let arr = params.as_array().ok_or_else(|| {
             JsonRpcResponse::error(
@@ -565,10 +567,11 @@ impl RpcHandler {
     async fn handle_token_get_price(&self, id: Value) -> JsonRpcResponse {
         match &self.oracle {
             Some(oracle_lock) => {
+                let current_height = self.blockchain.read().await.get_height();
                 let oracle = oracle_lock.read().await;
                 match oracle.get_price() {
                     Ok(price) => {
-                        let is_stale = oracle.is_stale(0); // caller can pass height; use 0 as placeholder
+                        let is_stale = oracle.is_stale(current_height);
                         JsonRpcResponse::success(
                             id,
                             json!({
