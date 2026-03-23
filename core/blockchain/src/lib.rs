@@ -102,3 +102,5 @@ pub mod sdk_types;
 pub use sdk_types::*;
 pub mod metrics;
 pub use metrics::ChainMetrics;
+pub mod finality;
+pub use finality::*;
