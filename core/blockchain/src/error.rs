@@ -43,10 +43,13 @@ pub enum BlockchainError {
 pub enum StorageError {
     #[error("Database error: {0}")]
     Database(String),
-    
+
+    #[error("Column family not found: {0}")]
+    ColumnFamilyNotFound(String),
+
     #[error("Serialization error: {0}")]
     Serialization(String),
-    
+
     #[error("Block not found: {hash}")]
     BlockNotFound { hash: Hash },
     

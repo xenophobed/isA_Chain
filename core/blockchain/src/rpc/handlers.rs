@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::blockchain::Blockchain;
 use crate::oracle::PriceOracle;
@@ -59,6 +59,7 @@ impl RpcHandler {
     // -----------------------------------------------------------------------
 
     pub async fn handle_request(&self, req: JsonRpcRequest) -> JsonRpcResponse {
+        debug!("RPC request received: method={}, id={:?}", req.method, req.id);
         info!("RPC request: method={}, id={:?}", req.method, req.id);
 
         match req.method.as_str() {
@@ -99,6 +100,10 @@ impl RpcHandler {
             // ---- Treasury methods ----
             METHOD_TREASURY_GET_BALANCE => self.handle_treasury_get_balance(req.id).await,
             METHOD_TREASURY_GET_STATS => self.handle_treasury_get_stats(req.id).await,
+
+            // ---- System / health methods ----
+            METHOD_SYSTEM_HEALTH => self.handle_system_health(req.id).await,
+            METHOD_SYSTEM_VERSION => self.handle_system_version(req.id).await,
 
             _ => {
                 warn!("Unknown RPC method: {}", req.method);
@@ -307,12 +312,18 @@ impl RpcHandler {
 
         let blockchain = self.blockchain.read().await;
         match blockchain.get_block(&hash) {
-            Some(block) => JsonRpcResponse::success(id, block_to_json(block)),
-            None => JsonRpcResponse::error(
-                id,
-                ERROR_NOT_FOUND,
-                format!("Block not found: 0x{}", hex::encode(hash.as_bytes())),
-            ),
+            Some(block) => {
+                info!("chain_getBlock: found block at height={}", block.header.height);
+                JsonRpcResponse::success(id, block_to_json(block))
+            }
+            None => {
+                warn!("chain_getBlock: block not found: 0x{}", hex::encode(hash.as_bytes()));
+                JsonRpcResponse::error(
+                    id,
+                    ERROR_NOT_FOUND,
+                    format!("Block not found: 0x{}", hex::encode(hash.as_bytes())),
+                )
+            }
         }
     }
 
@@ -363,12 +374,18 @@ impl RpcHandler {
 
         let blockchain = self.blockchain.read().await;
         match blockchain.get_block_by_height(height) {
-            Some(block) => JsonRpcResponse::success(id, block_to_json(block)),
-            None => JsonRpcResponse::error(
-                id,
-                ERROR_NOT_FOUND,
-                format!("Block not found at height {}", height),
-            ),
+            Some(block) => {
+                info!("chain_getBlockByHeight: found block at height={}", block.header.height);
+                JsonRpcResponse::success(id, block_to_json(block))
+            }
+            None => {
+                warn!("chain_getBlockByHeight: block not found at height={}", height);
+                JsonRpcResponse::error(
+                    id,
+                    ERROR_NOT_FOUND,
+                    format!("Block not found at height {}", height),
+                )
+            }
         }
     }
 
@@ -376,8 +393,14 @@ impl RpcHandler {
     async fn handle_chain_get_latest_block(&self, id: Value) -> JsonRpcResponse {
         let blockchain = self.blockchain.read().await;
         match blockchain.get_latest_block() {
-            Some(block) => JsonRpcResponse::success(id, block_to_json(block)),
-            None => JsonRpcResponse::error(id, ERROR_INTERNAL, "No blocks in chain".to_string()),
+            Some(block) => {
+                info!("chain_getLatestBlock: height={}", block.header.height);
+                JsonRpcResponse::success(id, block_to_json(block))
+            }
+            None => {
+                warn!("chain_getLatestBlock: no blocks in chain");
+                JsonRpcResponse::error(id, ERROR_INTERNAL, "No blocks in chain".to_string())
+            }
         }
     }
 
@@ -673,6 +696,38 @@ impl RpcHandler {
             }
             None => JsonRpcResponse::success(id, json!({ "balance": "0" })),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // System / health methods
+    // -----------------------------------------------------------------------
+
+    /// system_health() — returns node health snapshot
+    async fn handle_system_health(&self, id: Value) -> JsonRpcResponse {
+        let blockchain = self.blockchain.read().await;
+        let height = blockchain.get_height();
+        info!("system_health: height={}", height);
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "status": "ok",
+                "height": height,
+                "peers": 0u64,
+                "syncing": false,
+            }),
+        )
+    }
+
+    /// system_version() — returns node version and chain ID
+    async fn handle_system_version(&self, id: Value) -> JsonRpcResponse {
+        info!("system_version: chain_id={}", self.chain_id);
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "version": "0.1.0",
+                "chain_id": self.chain_id,
+            }),
+        )
     }
 
     /// treasury_getStats() — collected/distributed totals
@@ -1073,5 +1128,35 @@ mod tests {
             .await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ERROR_METHOD_NOT_FOUND);
+    }
+
+    // ---- system_health ----
+
+    #[tokio::test]
+    async fn test_system_health() {
+        let handler = make_handler();
+        let resp = handler
+            .handle_request(req(METHOD_SYSTEM_HEALTH, json!([])))
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["status"], json!("ok"));
+        assert_eq!(result["height"], json!(0u64));
+        assert_eq!(result["peers"], json!(0u64));
+        assert_eq!(result["syncing"], json!(false));
+    }
+
+    // ---- system_version ----
+
+    #[tokio::test]
+    async fn test_system_version() {
+        let handler = make_handler();
+        let resp = handler
+            .handle_request(req(METHOD_SYSTEM_VERSION, json!([])))
+            .await;
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["version"], json!("0.1.0"));
+        assert_eq!(result["chain_id"], json!(MAIN_CHAIN_ID));
     }
 }

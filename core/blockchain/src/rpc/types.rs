@@ -107,6 +107,12 @@ pub const METHOD_TREASURY_GET_BALANCE: &str = "treasury_getBalance";
 pub const METHOD_TREASURY_GET_STATS: &str = "treasury_getStats";
 
 // ---------------------------------------------------------------------------
+// System / health methods
+// ---------------------------------------------------------------------------
+pub const METHOD_SYSTEM_HEALTH: &str = "system_health";
+pub const METHOD_SYSTEM_VERSION: &str = "system_version";
+
+// ---------------------------------------------------------------------------
 // JSON-RPC error codes
 // ---------------------------------------------------------------------------
 pub const ERROR_PARSE: i32 = -32700;
