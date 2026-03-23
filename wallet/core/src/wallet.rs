@@ -132,18 +132,18 @@ impl Wallet {
                 )?
             }
             WalletType::MultiSig { .. } => {
-                return Err(WalletError::UnsupportedWalletType(\"MultiSig not yet implemented\".to_string()));
+                return Err(WalletError::UnsupportedWalletType("MultiSig not yet implemented".to_string()));
             }
             WalletType::Hardware { .. } => {
-                return Err(WalletError::UnsupportedWalletType(\"Hardware wallets not yet implemented\".to_string()));
+                return Err(WalletError::UnsupportedWalletType("Hardware wallets not yet implemented".to_string()));
             }
             WalletType::WatchOnly => {
-                return Err(WalletError::UnsupportedWalletType(\"Watch-only wallets not yet implemented\".to_string()));
+                return Err(WalletError::UnsupportedWalletType("Watch-only wallets not yet implemented".to_string()));
             }
         };
         
         // Create storage
-        let storage_path = format!(\"wallets/{}\", wallet_id);
+        let storage_path = format!("wallets/{}", wallet_id);
         let storage: Box<dyn Storage> = Box::new(WalletStorage::new(&storage_path)?);
         
         let mut wallet = Wallet {
@@ -168,7 +168,7 @@ impl Wallet {
     
     /// Load wallet from storage
     pub async fn load(wallet_id: &str, password: &str) -> Result<Self, WalletError> {
-        let storage_path = format!(\"wallets/{}\", wallet_id);
+        let storage_path = format!("wallets/{}", wallet_id);
         let storage: Box<dyn Storage> = Box::new(WalletStorage::new(&storage_path)?);
         
         // Load wallet metadata
@@ -194,7 +194,7 @@ impl Wallet {
     
     /// Derive next account
     pub async fn derive_next_account(&mut self) -> Result<WalletAccount, WalletError> {
-        let derivation_path = format!(\"m/44'/60'/0'/0/{}\", self.account_index);
+        let derivation_path = format!("m/44'/60'/0'/0/{}", self.account_index);
         
         let keypair = self.keystore.derive_key(&derivation_path)?;
         
@@ -202,7 +202,7 @@ impl Wallet {
             keypair.address,
             AccountType::External,
             derivation_path,
-            format!(\"Account {}\", self.account_index + 1),
+            format!("Account {}", self.account_index + 1),
             0, // Initial balance
         );
         
@@ -312,7 +312,7 @@ impl Wallet {
                 let private_key = self.keystore.get_master_private_key(password)?;
                 Ok(WalletExport::PrivateKey(hex::encode(private_key)))
             }
-            _ => Err(WalletError::UnsupportedOperation(\"Export not supported for this wallet type\".to_string())),
+            _ => Err(WalletError::UnsupportedOperation("Export not supported for this wallet type".to_string())),
         }
     }
     
@@ -421,15 +421,15 @@ mod tests {
     #[tokio::test]
     async fn test_wallet_creation() {
         let params = WalletParams {
-            name: \"Test Wallet\".to_string(),
-            password: \"test123\".to_string(),
+            name: "Test Wallet".to_string(),
+            password: "test123".to_string(),
             wallet_type: WalletType::Hierarchical,
             network: NetworkConfig {
                 chain_id: 1,
-                network_name: \"Test Network\".to_string(),
-                rpc_url: \"http://localhost:8545\".to_string(),
-                explorer_url: \"http://localhost:3000\".to_string(),
-                currency_symbol: \"ISA\".to_string(),
+                network_name: "Test Network".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                explorer_url: "http://localhost:3000".to_string(),
+                currency_symbol: "ISA".to_string(),
                 currency_decimals: 18,
             },
             mnemonic: None,
@@ -438,7 +438,7 @@ mod tests {
         
         let wallet = Wallet::create(params).await.unwrap();
         
-        assert_eq!(wallet.name, \"Test Wallet\");
+        assert_eq!(wallet.name, "Test Wallet");
         assert_eq!(wallet.wallet_type, WalletType::Hierarchical);
         assert!(!wallet.accounts.is_empty());
     }
@@ -446,15 +446,15 @@ mod tests {
     #[tokio::test]
     async fn test_account_derivation() {
         let params = WalletParams {
-            name: \"Test Wallet\".to_string(),
-            password: \"test123\".to_string(),
+            name: "Test Wallet".to_string(),
+            password: "test123".to_string(),
             wallet_type: WalletType::Hierarchical,
             network: NetworkConfig {
                 chain_id: 1,
-                network_name: \"Test Network\".to_string(),
-                rpc_url: \"http://localhost:8545\".to_string(),
-                explorer_url: \"http://localhost:3000\".to_string(),
-                currency_symbol: \"ISA\".to_string(),
+                network_name: "Test Network".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                explorer_url: "http://localhost:3000".to_string(),
+                currency_symbol: "ISA".to_string(),
                 currency_decimals: 18,
             },
             mnemonic: None,

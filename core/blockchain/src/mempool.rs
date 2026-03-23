@@ -74,9 +74,37 @@ impl Mempool {
         self.transactions.is_empty()
     }
     
-    // TODO: Implement mempool features
-    // - Transaction ordering by gas price and nonce
-    // - Transaction replacement
-    // - Eviction policies
-    // - Mempool synchronization
+    /// Get pending transactions for block building
+    /// Returns transactions ordered by gas price and nonce
+    pub fn get_pending_transactions(&self, max_count: usize) -> Vec<Transaction> {
+        let mut txs: Vec<_> = self.transactions.values().cloned().collect();
+
+        // Sort by gas price (descending) then nonce (ascending)
+        txs.sort_by(|a, b| {
+            match b.gas_price.cmp(&a.gas_price) {
+                std::cmp::Ordering::Equal => a.nonce.cmp(&b.nonce),
+                other => other,
+            }
+        });
+
+        txs.into_iter().take(max_count).collect()
+    }
+
+    /// Get all pending transactions
+    pub fn get_all_transactions(&self) -> Vec<Transaction> {
+        self.transactions.values().cloned().collect()
+    }
+
+    /// Clear all transactions
+    pub fn clear(&mut self) {
+        self.transactions.clear();
+        self.by_sender.clear();
+    }
+
+    /// Remove multiple transactions
+    pub fn remove_transactions(&mut self, hashes: &[Hash]) {
+        for hash in hashes {
+            self.remove_transaction(hash);
+        }
+    }
 }

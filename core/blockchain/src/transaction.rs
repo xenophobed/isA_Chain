@@ -1,4 +1,7 @@
 use crate::types::*;
+use crate::types::{
+    ComputeCapacity, ComputeUsage, DisputeType, ProviderStatus, ResourceType,
+};
 use serde::{Deserialize, Serialize};
 
 /// Transaction types supported by the blockchain
@@ -24,6 +27,28 @@ pub enum TransactionType {
     GovernanceVote,
     /// Cross-chain bridge transaction
     Bridge,
+
+    // ========== Compute Marketplace ==========
+    /// Register as a compute provider
+    ComputeRegister,
+    /// Update provider info (capacity, pricing)
+    ComputeUpdateProvider,
+    /// Provider exit (begin unstaking)
+    ComputeProviderExit,
+    /// Request compute resources
+    ComputeRequest,
+    /// Provider accepts a job
+    ComputeAccept,
+    /// Mark job as started
+    ComputeStart,
+    /// Settle a completed job
+    ComputeSettle,
+    /// Cancel a pending job
+    ComputeCancel,
+    /// Open a dispute
+    ComputeDispute,
+    /// Resolve a dispute
+    ComputeResolveDispute,
 }
 
 /// Transaction data based on transaction type
@@ -96,6 +121,128 @@ pub enum TransactionData {
         target_address: Vec<u8>,
         amount: Amount,
         bridge_data: Vec<u8>,
+    },
+
+    // ========== Compute Marketplace ==========
+
+    /// Register as a compute provider
+    ComputeRegister {
+        /// Supported resource types
+        resource_types: Vec<ResourceType>,
+        /// Total capacity offered
+        capacity: ComputeCapacity,
+        /// Price per hour in ISA (wei)
+        price_per_hour: Amount,
+        /// Minimum job duration in seconds
+        min_duration_secs: u64,
+        /// Maximum job duration in seconds
+        max_duration_secs: u64,
+        /// Stake amount (must meet PROVIDER_MIN_STAKE)
+        stake: Amount,
+        /// Geographic region (optional)
+        region: Option<String>,
+        /// Endpoint URL for pool_manager
+        endpoint: String,
+    },
+
+    /// Update provider configuration
+    ComputeUpdateProvider {
+        /// New capacity (None = no change)
+        capacity: Option<ComputeCapacity>,
+        /// New price per hour (None = no change)
+        price_per_hour: Option<Amount>,
+        /// New status (Active/Paused)
+        status: Option<ProviderStatus>,
+        /// Add more stake
+        additional_stake: Option<Amount>,
+        /// New endpoint
+        endpoint: Option<String>,
+    },
+
+    /// Provider initiates exit (begins unbonding)
+    ComputeProviderExit {
+        /// Reason for exit (optional)
+        reason: Option<String>,
+    },
+
+    /// User requests compute resources
+    ComputeRequest {
+        /// Preferred provider (None = marketplace matching)
+        provider: Option<Address>,
+        /// Required resource type
+        resource_type: ResourceType,
+        /// Required capacity
+        capacity: ComputeCapacity,
+        /// Maximum price per hour willing to pay
+        max_price_per_hour: Amount,
+        /// Requested duration in seconds
+        duration_secs: u64,
+        /// Escrow amount (locked until settlement)
+        escrow_amount: Amount,
+        /// Job metadata (image, config, etc.)
+        metadata: Vec<u8>,
+    },
+
+    /// Provider accepts a pending job
+    ComputeAccept {
+        /// Job ID to accept
+        job_id: Hash,
+        /// Agreed price per hour
+        price_per_hour: Amount,
+    },
+
+    /// Mark job as started (provider confirms VM is running)
+    ComputeStart {
+        /// Job ID
+        job_id: Hash,
+        /// Connection info for user (encrypted)
+        connection_info: Vec<u8>,
+    },
+
+    /// Settle a completed job
+    ComputeSettle {
+        /// Job ID
+        job_id: Hash,
+        /// Actual usage metrics
+        usage: ComputeUsage,
+        /// Provider's signature on usage
+        provider_signature: Signature,
+        /// Optional execution proof
+        execution_proof: Option<Vec<u8>>,
+    },
+
+    /// Cancel a job (user or provider)
+    ComputeCancel {
+        /// Job ID
+        job_id: Hash,
+        /// Reason for cancellation
+        reason: String,
+    },
+
+    /// Open a dispute on a job
+    ComputeDispute {
+        /// Job ID in dispute
+        job_id: Hash,
+        /// Type of dispute
+        dispute_type: DisputeType,
+        /// Hash of off-chain evidence
+        evidence_hash: Hash,
+        /// Description
+        description: String,
+    },
+
+    /// Resolve a dispute (governance/arbitrator only)
+    ComputeResolveDispute {
+        /// Dispute ID
+        dispute_id: Hash,
+        /// Winner address
+        winner: Address,
+        /// Amount to refund user
+        user_refund: Amount,
+        /// Amount to pay provider
+        provider_payment: Amount,
+        /// Slash amount from provider
+        slash_amount: Amount,
     },
 }
 
@@ -218,33 +365,32 @@ impl Transaction {
         if private_key.len() != 32 {
             return Err(TransactionError::InvalidPrivateKey);
         }
-        
+
         let signing_hash = self.signing_hash();
-        
+
         // Use secp256k1 for signing (Ethereum-compatible)
         let secp = secp256k1::Secp256k1::new();
         let secret_key = secp256k1::SecretKey::from_slice(private_key)
             .map_err(|_| TransactionError::InvalidPrivateKey)?;
-        
+
         let message = secp256k1::Message::from_digest_slice(signing_hash.as_bytes())
             .map_err(|_| TransactionError::SigningFailed)?;
-        
-        let signature = secp.sign_ecdsa(&message, &secret_key);
-        let signature_bytes = signature.serialize_compact();
-        
+
+        // Sign with recoverable signature to get the recovery ID
+        let recoverable_sig = secp.sign_ecdsa_recoverable(&message, &secret_key);
+        let (recovery_id, signature_bytes) = recoverable_sig.serialize_compact();
+
         // Split signature into r, s components
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
         r.copy_from_slice(&signature_bytes[0..32]);
         s.copy_from_slice(&signature_bytes[32..64]);
-        
-        // For now, use a default recovery ID (we'll need to compute this properly later)
-        let recovery_id = 0u8;
-        self.signature = Some(Signature::new(r, s, recovery_id));
-        
+
+        self.signature = Some(Signature::new(r, s, recovery_id.to_i32() as u8));
+
         // Invalidate cached hash
         self.hash = None;
-        
+
         Ok(())
     }
     
@@ -300,16 +446,17 @@ impl Transaction {
                     return Err(TransactionError::InvalidAmount);
                 }
             }
-            
+
             TransactionData::ContractDeploy { bytecode, .. } => {
                 if bytecode.is_empty() {
                     return Err(TransactionError::EmptyBytecode);
                 }
-                if bytecode.len() > 1_000_000 { // 1MB limit
+                if bytecode.len() > 1_000_000 {
+                    // 1MB limit
                     return Err(TransactionError::BytecodeTooLarge);
                 }
             }
-            
+
             TransactionData::Stake { amount, validator_info } => {
                 if *amount < constants::VALIDATOR_MIN_STAKE {
                     return Err(TransactionError::InsufficientStakeAmount);
@@ -318,16 +465,93 @@ impl Transaction {
                     return Err(TransactionError::InvalidCommissionRate);
                 }
             }
-            
+
             TransactionData::Delegate { amount, .. } => {
                 if *amount < constants::DELEGATION_MIN_AMOUNT {
                     return Err(TransactionError::InsufficientDelegationAmount);
                 }
             }
-            
+
+            // ========== Compute Marketplace Validation ==========
+            TransactionData::ComputeRegister {
+                stake,
+                resource_types,
+                capacity,
+                price_per_hour,
+                endpoint,
+                ..
+            } => {
+                if *stake < constants::PROVIDER_MIN_STAKE {
+                    return Err(TransactionError::InsufficientProviderStake);
+                }
+                if resource_types.is_empty() {
+                    return Err(TransactionError::NoResourceTypes);
+                }
+                if capacity.cpu_millicores == 0 || capacity.memory_mb == 0 {
+                    return Err(TransactionError::InvalidCapacity);
+                }
+                if *price_per_hour == 0 {
+                    return Err(TransactionError::InvalidPrice);
+                }
+                if endpoint.is_empty() {
+                    return Err(TransactionError::InvalidEndpoint);
+                }
+            }
+
+            TransactionData::ComputeRequest {
+                capacity,
+                max_price_per_hour,
+                duration_secs,
+                escrow_amount,
+                ..
+            } => {
+                if capacity.cpu_millicores == 0 || capacity.memory_mb == 0 {
+                    return Err(TransactionError::InvalidCapacity);
+                }
+                if *max_price_per_hour == 0 {
+                    return Err(TransactionError::InvalidPrice);
+                }
+                if *duration_secs == 0 {
+                    return Err(TransactionError::InvalidDuration);
+                }
+                if *escrow_amount < constants::JOB_MIN_ESCROW {
+                    return Err(TransactionError::InsufficientEscrow);
+                }
+                // Verify escrow covers at least the minimum expected cost
+                let min_cost = (*duration_secs as u128 * *max_price_per_hour) / 3600;
+                if *escrow_amount < min_cost {
+                    return Err(TransactionError::InsufficientEscrow);
+                }
+            }
+
+            TransactionData::ComputeAccept { price_per_hour, .. } => {
+                if *price_per_hour == 0 {
+                    return Err(TransactionError::InvalidPrice);
+                }
+            }
+
+            TransactionData::ComputeSettle { usage, .. } => {
+                if usage.duration_secs == 0 {
+                    return Err(TransactionError::InvalidDuration);
+                }
+            }
+
+            TransactionData::ComputeResolveDispute {
+                user_refund,
+                provider_payment,
+                slash_amount,
+                ..
+            } => {
+                // Slash cannot exceed max slash percent of typical provider stake
+                // This is a sanity check; actual validation happens in state transition
+                if *slash_amount > 0 && *user_refund == 0 && *provider_payment == 0 {
+                    return Err(TransactionError::InvalidDisputeResolution);
+                }
+            }
+
             _ => {} // Other transaction types are valid by default
         }
-        
+
         Ok(())
     }
     
@@ -344,6 +568,17 @@ impl Transaction {
             TransactionData::GovernanceProposal { .. } => TransactionType::GovernanceProposal,
             TransactionData::GovernanceVote { .. } => TransactionType::GovernanceVote,
             TransactionData::Bridge { .. } => TransactionType::Bridge,
+            // Compute marketplace
+            TransactionData::ComputeRegister { .. } => TransactionType::ComputeRegister,
+            TransactionData::ComputeUpdateProvider { .. } => TransactionType::ComputeUpdateProvider,
+            TransactionData::ComputeProviderExit { .. } => TransactionType::ComputeProviderExit,
+            TransactionData::ComputeRequest { .. } => TransactionType::ComputeRequest,
+            TransactionData::ComputeAccept { .. } => TransactionType::ComputeAccept,
+            TransactionData::ComputeStart { .. } => TransactionType::ComputeStart,
+            TransactionData::ComputeSettle { .. } => TransactionType::ComputeSettle,
+            TransactionData::ComputeCancel { .. } => TransactionType::ComputeCancel,
+            TransactionData::ComputeDispute { .. } => TransactionType::ComputeDispute,
+            TransactionData::ComputeResolveDispute { .. } => TransactionType::ComputeResolveDispute,
         }
     }
     
@@ -370,48 +605,97 @@ impl Transaction {
 pub enum TransactionError {
     #[error("Invalid private key")]
     InvalidPrivateKey,
-    
+
     #[error("Signing failed")]
     SigningFailed,
-    
+
     #[error("Missing signature")]
     MissingSignature,
-    
+
     #[error("Invalid signature")]
     InvalidSignature,
-    
+
     #[error("Invalid sender: expected {expected}, recovered {recovered}")]
     InvalidSender { expected: Address, recovered: Address },
-    
+
     #[error("Invalid amount")]
     InvalidAmount,
-    
+
     #[error("Empty bytecode")]
     EmptyBytecode,
-    
+
     #[error("Bytecode too large")]
     BytecodeTooLarge,
-    
+
     #[error("Insufficient stake amount")]
     InsufficientStakeAmount,
-    
+
     #[error("Insufficient delegation amount")]
     InsufficientDelegationAmount,
-    
+
     #[error("Invalid commission rate")]
     InvalidCommissionRate,
-    
+
     #[error("Invalid nonce: expected {expected}, got {actual}")]
     InvalidNonce { expected: u64, actual: u64 },
-    
+
     #[error("Gas limit too low")]
     GasLimitTooLow,
-    
+
     #[error("Gas price too low")]
     GasPriceTooLow,
-    
+
     #[error("Insufficient balance")]
     InsufficientBalance,
+
+    // ========== Compute Marketplace Errors ==========
+    #[error("Insufficient provider stake (minimum: {0} ISA)", constants::PROVIDER_MIN_STAKE)]
+    InsufficientProviderStake,
+
+    #[error("No resource types specified")]
+    NoResourceTypes,
+
+    #[error("Invalid capacity: CPU and memory must be > 0")]
+    InvalidCapacity,
+
+    #[error("Invalid price: must be > 0")]
+    InvalidPrice,
+
+    #[error("Invalid endpoint URL")]
+    InvalidEndpoint,
+
+    #[error("Invalid duration: must be > 0")]
+    InvalidDuration,
+
+    #[error("Insufficient escrow amount")]
+    InsufficientEscrow,
+
+    #[error("Job not found")]
+    JobNotFound,
+
+    #[error("Provider not found")]
+    ProviderNotFound,
+
+    #[error("Provider not active")]
+    ProviderNotActive,
+
+    #[error("Job already accepted")]
+    JobAlreadyAccepted,
+
+    #[error("Job not in correct state for this operation")]
+    InvalidJobState,
+
+    #[error("Not authorized to perform this action")]
+    NotAuthorized,
+
+    #[error("Dispute window expired")]
+    DisputeWindowExpired,
+
+    #[error("Invalid dispute resolution")]
+    InvalidDisputeResolution,
+
+    #[error("Provider capacity exceeded")]
+    CapacityExceeded,
 }
 
 #[cfg(test)]
@@ -421,8 +705,13 @@ mod tests {
     #[test]
     fn test_transaction_creation_and_signing() {
         let private_key = [1u8; 32];
-        let from = Address::from([1u8; 20]);
-        
+
+        // Derive the correct address from the private key
+        let secp = secp256k1::Secp256k1::new();
+        let secret_key = secp256k1::SecretKey::from_slice(&private_key).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let from = Address::from_public_key(&public_key.serialize());
+
         let mut tx = Transaction::new(
             from,
             0,
@@ -435,11 +724,11 @@ mod tests {
             constants::BASE_GAS_PRICE,
             constants::MAIN_CHAIN_ID,
         );
-        
+
         // Sign transaction
         assert!(tx.sign(&private_key).is_ok());
         assert!(tx.is_signed());
-        
+
         // Verify transaction
         assert!(tx.verify().is_ok());
     }

@@ -368,9 +368,17 @@ mod tests {
     
     #[test]
     fn test_block_creation_and_verification() {
-        // Create a simple transaction for testing
-        let tx = Transaction::new(
-            Address::from([1u8; 20]),
+        // Create a properly signed transaction for testing
+        let private_key = [1u8; 32];
+
+        // Derive the correct address from the private key
+        let secp = secp256k1::Secp256k1::new();
+        let secret_key = secp256k1::SecretKey::from_slice(&private_key).unwrap();
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let from = Address::from_public_key(&public_key.serialize());
+
+        let mut tx = Transaction::new(
+            from,
             0, // nonce
             TransactionData::Transfer {
                 to: Address::from([2u8; 20]),
@@ -381,7 +389,10 @@ mod tests {
             constants::BASE_GAS_PRICE,
             constants::MAIN_CHAIN_ID,
         );
-        
+
+        // Sign the transaction
+        tx.sign(&private_key).expect("Signing should succeed");
+
         let consensus_data = ConsensusData {
             validator_signatures: vec![],
             stake_data: StakeData {
@@ -391,7 +402,7 @@ mod tests {
             },
             randomness: Hash::hash_data(b"test_randomness"),
         };
-        
+
         let block = Block::new(
             1,
             Hash::hash_data(b"parent_hash"),
@@ -402,7 +413,7 @@ mod tests {
             constants::MAX_GAS_PER_BLOCK,
             consensus_data,
         );
-        
+
         assert!(block.verify().is_ok());
     }
     

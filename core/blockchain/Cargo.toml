@@ -47,6 +47,15 @@ hex = "0.4"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
 
+# HTTP and RPC server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = "1.0"
+
+# Additional storage
+sled = "0.34"
+
 [[bin]]
 name = "isa-chain-node"
 path = "src/bin/node.rs"

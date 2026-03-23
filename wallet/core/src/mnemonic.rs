@@ -110,7 +110,7 @@ impl Mnemonic {
             18 => 192,
             21 => 224,
             24 => 256,
-            _ => return Err(WalletError::InvalidMnemonic(\"Invalid word count\".to_string())),
+            _ => return Err(WalletError::InvalidMnemonic("Invalid word count".to_string())),
         };
         
         Ok(Mnemonic {
@@ -235,7 +235,7 @@ impl Mnemonic {
 
 impl std::fmt::Display for Mnemonic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, \"{}\", self.phrase())
+        write!(f, "{}", self.phrase())
     }
 }
 
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn test_mnemonic_from_phrase() {
         // Known valid test mnemonic
-        let phrase = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\";
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let mnemonic = Mnemonic::from_phrase(phrase).unwrap();
         
         assert_eq!(mnemonic.word_count(), 12);
@@ -324,7 +324,7 @@ mod tests {
     
     #[test]
     fn test_mnemonic_validation() {
-        let valid_phrase = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\";
+        let valid_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let validation = MnemonicValidator::validate_comprehensive(valid_phrase, Language::English).unwrap();
         
         assert!(validation.valid);
@@ -337,7 +337,7 @@ mod tests {
     
     #[test]
     fn test_invalid_mnemonic() {
-        let invalid_phrase = \"invalid mnemonic phrase that should not work\";
+        let invalid_phrase = "invalid mnemonic phrase that should not work";
         let validation = MnemonicValidator::validate_comprehensive(invalid_phrase, Language::English).unwrap();
         
         assert!(!validation.valid);
@@ -346,12 +346,12 @@ mod tests {
     
     #[test]
     fn test_seed_generation() {
-        let phrase = \"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\";
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let mnemonic = Mnemonic::from_phrase(phrase).unwrap();
         
-        let seed1 = mnemonic.to_seed_bytes(\"\");
-        let seed2 = mnemonic.to_seed_bytes(\"\");
-        let seed3 = mnemonic.to_seed_bytes(\"password\");
+        let seed1 = mnemonic.to_seed_bytes("");
+        let seed2 = mnemonic.to_seed_bytes("");
+        let seed3 = mnemonic.to_seed_bytes("password");
         
         // Same passphrase should produce same seed
         assert_eq!(seed1, seed2);

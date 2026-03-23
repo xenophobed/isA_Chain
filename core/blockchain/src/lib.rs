@@ -12,12 +12,17 @@ pub mod mempool;
 pub mod validator;
 pub mod error;
 pub mod token;
+pub mod rpc;
+pub mod compute_market;
 
 pub use types::*;
 pub use block::*;
 pub use transaction::*;
 pub use account::*;
 pub use blockchain::*;
-pub use consensus::*;
+pub use consensus::{ConsensusEngine, BlockProducer};
+pub use mempool::*;
 pub use error::*;
 pub use token::*;
+pub use rpc::RpcServer;
+pub use compute_market::{ComputeMarketState, ComputeMarketError, SettlementResult};

@@ -37,7 +37,7 @@ libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "gossipsub", "
 reqwest = { version = "0.11", features = ["json"] }
 
 # Storage
-rocksdb = "0.21"
+rocksdb = { version = "0.21", default-features = false, features = ["zstd"] }
 sled = "0.34"
 
 # Error handling

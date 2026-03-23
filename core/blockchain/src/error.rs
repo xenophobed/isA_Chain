@@ -225,6 +225,12 @@ pub enum ValidationError {
     
     #[error("Future block: height {height}")]
     FutureBlock { height: BlockHeight },
+
+    #[error("Invalid parent hash")]
+    InvalidParentHash,
+
+    #[error("Insufficient balance")]
+    InsufficientBalance,
 }
 
 /// Result type alias for blockchain operations
