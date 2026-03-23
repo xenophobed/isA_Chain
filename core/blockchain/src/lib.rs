@@ -22,6 +22,9 @@ pub mod compute_market;
 pub mod oracle;
 pub mod agent_wallet;
 pub mod credits;
+pub mod subnet;
+pub mod agent_registry;
+pub mod channel;
 
 pub use types::*;
 pub use block::*;
@@ -42,3 +45,6 @@ pub use compute_market::{ComputeMarketState, ComputeMarketError, SettlementResul
 pub use oracle::*;
 pub use agent_wallet::*;
 pub use credits::*;
+pub use subnet::*;
+pub use agent_registry::*;
+pub use channel::*;
