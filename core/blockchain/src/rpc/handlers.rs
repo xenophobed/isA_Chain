@@ -4,6 +4,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::blockchain::Blockchain;
+use crate::metrics::ChainMetrics;
 use crate::oracle::PriceOracle;
 use crate::staking::StakingVault;
 use crate::treasury::ProtocolTreasury;
@@ -23,6 +24,8 @@ pub struct RpcHandler {
     treasury: Option<Arc<RwLock<ProtocolTreasury>>>,
     /// Optional price oracle
     oracle: Option<Arc<RwLock<PriceOracle>>>,
+    /// Prometheus-compatible metrics counters
+    pub metrics: ChainMetrics,
 }
 
 impl RpcHandler {
@@ -33,6 +36,7 @@ impl RpcHandler {
             staking: None,
             treasury: None,
             oracle: None,
+            metrics: ChainMetrics::new(),
         }
     }
 
@@ -61,6 +65,9 @@ impl RpcHandler {
     pub async fn handle_request(&self, req: JsonRpcRequest) -> JsonRpcResponse {
         debug!("RPC request received: method={}, id={:?}", req.method, req.id);
         info!("RPC request: method={}, id={:?}", req.method, req.id);
+
+        // Track every inbound request regardless of outcome.
+        self.metrics.inc_rpc_requests();
 
         match req.method.as_str() {
             // ---- Legacy / eth-compatible methods ----
@@ -104,6 +111,7 @@ impl RpcHandler {
             // ---- System / health methods ----
             METHOD_SYSTEM_HEALTH => self.handle_system_health(req.id).await,
             METHOD_SYSTEM_VERSION => self.handle_system_version(req.id).await,
+            METHOD_SYSTEM_METRICS => self.handle_system_metrics(req.id).await,
 
             _ => {
                 warn!("Unknown RPC method: {}", req.method);
@@ -730,6 +738,27 @@ impl RpcHandler {
         )
     }
 
+    /// system_metrics() — JSON-RPC handler; returns Prometheus text as a string result.
+    async fn handle_system_metrics(&self, id: Value) -> JsonRpcResponse {
+        let output = self.render_metrics().await;
+        JsonRpcResponse::success(id, json!(output))
+    }
+
+    /// Render current Prometheus text exposition metrics.
+    ///
+    /// Exposed as `pub` so the HTTP `GET /metrics` handler in `server.rs` can
+    /// reuse it without duplicating the blockchain read logic.
+    pub async fn render_metrics(&self) -> String {
+        let blockchain = self.blockchain.read().await;
+        let chain_height = blockchain.get_height();
+        let mempool_size = blockchain.pending_transaction_count() as u64;
+        let account_count = blockchain.account_count() as u64;
+        drop(blockchain);
+
+        info!("metrics render: height={}, mempool={}, accounts={}", chain_height, mempool_size, account_count);
+        self.metrics.render(chain_height, mempool_size, account_count)
+    }
+
     /// treasury_getStats() — collected/distributed totals
     async fn handle_treasury_get_stats(&self, id: Value) -> JsonRpcResponse {
         match &self.treasury {
@@ -1158,5 +1187,69 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["version"], json!("0.1.0"));
         assert_eq!(result["chain_id"], json!(MAIN_CHAIN_ID));
+    }
+
+    // ---- system_metrics ----
+
+    #[tokio::test]
+    async fn test_system_metrics_rpc_returns_prometheus_text() {
+        let handler = make_handler();
+        let resp = handler
+            .handle_request(req(METHOD_SYSTEM_METRICS, json!([])))
+            .await;
+        assert!(resp.error.is_none());
+
+        // Result is a JSON string containing Prometheus exposition text
+        let text = resp.result.unwrap();
+        let text = text.as_str().expect("system_metrics result should be a string");
+
+        assert!(text.contains("isa_chain_height"), "missing isa_chain_height");
+        assert!(text.contains("isa_chain_mempool_size"), "missing isa_chain_mempool_size");
+        assert!(text.contains("isa_chain_rpc_requests_total"), "missing rpc counter");
+        // After the call above, rpc_requests_total should be at least 1
+        assert!(text.contains("isa_chain_rpc_requests_total 1"), "counter should be 1 after first request");
+    }
+
+    #[tokio::test]
+    async fn test_system_metrics_rpc_counter_increments() {
+        let handler = make_handler();
+
+        // Make several requests
+        for _ in 0..3 {
+            handler
+                .handle_request(req(METHOD_SYSTEM_HEALTH, json!([])))
+                .await;
+        }
+
+        // Now call system_metrics — this is request #4
+        let resp = handler
+            .handle_request(req(METHOD_SYSTEM_METRICS, json!([])))
+            .await;
+        assert!(resp.error.is_none());
+
+        let text = resp.result.unwrap();
+        let text = text.as_str().unwrap();
+        // 3 health requests + 1 metrics request = 4
+        assert!(text.contains("isa_chain_rpc_requests_total 4"), "expected 4 rpc requests, got:\n{text}");
+    }
+
+    #[tokio::test]
+    async fn test_system_metrics_rpc_format_valid() {
+        let handler = make_handler();
+        let resp = handler
+            .handle_request(req(METHOD_SYSTEM_METRICS, json!([])))
+            .await;
+        let text = resp.result.unwrap();
+        let text = text.as_str().unwrap();
+
+        // Every non-comment, non-empty line must be "name value"
+        for line in text.lines() {
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            assert_eq!(parts.len(), 2, "bad prometheus line: {line}");
+            parts[1].parse::<u64>().expect("metric value must be u64");
+        }
     }
 }

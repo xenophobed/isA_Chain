@@ -111,6 +111,7 @@ pub const METHOD_TREASURY_GET_STATS: &str = "treasury_getStats";
 // ---------------------------------------------------------------------------
 pub const METHOD_SYSTEM_HEALTH: &str = "system_health";
 pub const METHOD_SYSTEM_VERSION: &str = "system_version";
+pub const METHOD_SYSTEM_METRICS: &str = "system_metrics";
 
 // ---------------------------------------------------------------------------
 // JSON-RPC error codes

@@ -460,6 +460,11 @@ impl Blockchain {
     pub fn pending_transaction_count(&self) -> usize {
         self.mempool.len()
     }
+
+    /// Number of accounts currently loaded in memory.
+    pub fn account_count(&self) -> usize {
+        self.accounts.len()
+    }
 }
 
 #[cfg(test)]

@@ -1,81 +1,71 @@
-use isa_chain_core::{Blockchain, RpcServer, BlockProducer, Address};
+use isa_chain_core::{Blockchain, RpcServer, BlockProducer};
+use isa_chain_core::consensus::ConsensusEngine;
+use isa_chain_core::storage::RocksDbStorage;
 use isa_chain_core::types::constants::MAIN_CHAIN_ID;
 use std::sync::Arc;
+use std::env;
 use tokio::sync::RwLock;
 use tracing::info;
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("isa_chain=info".parse()?)
+        )
+        .init();
 
-    info!("🚀 Starting isA_Chain Node...");
+    // Configuration from environment
+    let chain_id = env::var("CHAIN_ID")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(MAIN_CHAIN_ID);
+    let rpc_port = env::var("RPC_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(9944u16);
+    let block_time = env::var("BLOCK_TIME_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3u64);
+    let data_dir = env::var("DATA_DIR")
+        .unwrap_or_else(|_| "./data".to_string());
 
-    // Initialize blockchain
-    let mut blockchain = Blockchain::new(MAIN_CHAIN_ID);
-    info!("✅ Blockchain initialized");
+    info!("Starting isA_Chain node");
+    info!("  Chain ID: {}", chain_id);
+    info!("  RPC Port: {}", rpc_port);
+    info!("  Block Time: {}s", block_time);
+    info!("  Data Dir: {}", data_dir);
 
-    // Create some test accounts with initial balance
-    let test_address1 = Address::new([1u8; 20]);
-    let test_address2 = Address::new([2u8; 20]);
-    blockchain.mint(test_address1, 1_000_000_000_000_000_000_000); // 1000 ISA
-    blockchain.mint(test_address2, 500_000_000_000_000_000_000);   // 500 ISA
-    info!("✅ Test accounts created");
+    // Initialize blockchain with optional persistence
+    let blockchain = if env::var("PERSIST").unwrap_or_default() == "true" {
+        std::fs::create_dir_all(&data_dir)?;
+        let storage = RocksDbStorage::new(&data_dir)?;
+        Blockchain::new_with_storage(chain_id, storage)?
+    } else {
+        Blockchain::new(chain_id)
+    };
 
     let blockchain = Arc::new(RwLock::new(blockchain));
 
-    // Start block producer in background
+    // Start block producer
+    let consensus = Arc::new(RwLock::new(ConsensusEngine::new()));
     let block_producer = BlockProducer::new(
         blockchain.clone(),
-        3, // 3 second block time
-        1000, // max 1000 transactions per block
+        consensus,
+        block_time,
+        100,
     );
     tokio::spawn(async move {
         block_producer.start().await;
     });
-    info!("✅ Block producer started");
 
-    // Start RPC server
-    let rpc_port = 9944;
-    let rpc_server = RpcServer::new(blockchain.clone(), MAIN_CHAIN_ID, rpc_port);
-
-    println!("
-╔══════════════════════════════════════════════════════════╗
-║                   isA_Chain Node v0.1.0                  ║
-║                                                          ║
-║  Your multi-chain compatible blockchain is running!      ║
-╚══════════════════════════════════════════════════════════╝
-
-Node Information:
-- Chain ID: {}
-- Network: Development
-- RPC Port: {}
-- RPC URL: http://localhost:{}
-
-Test Accounts:
-- Account 1: 0x{} (Balance: 1000 ISA)
-- Account 2: 0x{} (Balance: 500 ISA)
-
-Available RPC Methods:
-- eth_chainId
-- eth_blockNumber
-- eth_getBalance
-- eth_sendRawTransaction
-- eth_getTransactionCount
-- eth_getBlockByNumber
-
-Status: Running... Press Ctrl+C to stop
-",
-        MAIN_CHAIN_ID,
-        rpc_port,
-        rpc_port,
-        hex::encode(test_address1.as_bytes()),
-        hex::encode(test_address2.as_bytes())
-    );
-
-    // Run RPC server
-    rpc_server.start().await?;
+    // Start RPC server (blocks)
+    info!("RPC server listening on 0.0.0.0:{}", rpc_port);
+    let rpc = RpcServer::new(blockchain, chain_id, rpc_port);
+    rpc.start().await?;
 
     Ok(())
 }

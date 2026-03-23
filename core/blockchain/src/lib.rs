@@ -1,3 +1,5 @@
+pub mod node;
+pub use node::*;
 pub mod types;
 pub mod block;
 pub mod transaction;
@@ -98,3 +100,5 @@ pub mod billing;
 pub use billing::*;
 pub mod sdk_types;
 pub use sdk_types::*;
+pub mod metrics;
+pub use metrics::ChainMetrics;

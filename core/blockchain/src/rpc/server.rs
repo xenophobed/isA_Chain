@@ -1,8 +1,8 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
@@ -47,11 +47,13 @@ impl RpcServer {
 
         let app = Router::new()
             .route("/", post(handle_rpc))
+            .route("/metrics", get(handle_metrics))
             .layer(cors)
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         info!("✅ RPC server listening on http://{}", addr);
+        info!("📊 Prometheus metrics available at http://{}/metrics", addr);
 
         axum::serve(listener, app).await?;
 
@@ -81,4 +83,20 @@ async fn handle_rpc(
     let response = state.rpc_handler.handle_request(request).await;
 
     (StatusCode::OK, Json(response))
+}
+
+/// GET /metrics — returns Prometheus text exposition format.
+///
+/// Delegates to `RpcHandler::render_metrics` which reads live chain state and
+/// combines it with the shared atomic counters from `ChainMetrics`.
+async fn handle_metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let body = state.rpc_handler.render_metrics().await;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+    );
+
+    (StatusCode::OK, headers, body)
 }
