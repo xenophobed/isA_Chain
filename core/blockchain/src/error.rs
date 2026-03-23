@@ -1,6 +1,7 @@
 use crate::types::*;
 use crate::account::AccountError;
 use crate::block::BlockError;
+use crate::token::TokenError;
 use crate::transaction::TransactionError;
 
 /// Main blockchain error type
@@ -32,6 +33,9 @@ pub enum BlockchainError {
     
     #[error("Validation error: {0}")]
     Validation(#[from] ValidationError),
+
+    #[error("Token error: {0}")]
+    Token(#[from] TokenError),
 }
 
 /// Storage-related errors
