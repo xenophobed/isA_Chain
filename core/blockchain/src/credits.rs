@@ -6,10 +6,10 @@ use std::collections::HashMap;
 // Constants
 // ====================================================================
 
-/// Default credit price: $0.01 USD = 10_000 micro-USD
-pub const DEFAULT_CREDIT_PRICE_USD: Amount = 10_000;
+/// Default credit price: $0.00001 USD = 100 micro-USD
+pub const DEFAULT_CREDIT_PRICE_USD: Amount = 100;
 
-/// Default minimum purchase: 100 credits = $1.00 worth
+/// Default minimum purchase: 100 credits = $0.001 worth
 pub const DEFAULT_MIN_PURCHASE: Amount = 100;
 
 /// Micro-USD scale factor: 1_000_000 micro-USD = $1.00
@@ -86,7 +86,7 @@ impl CreditAccount {
 /// [`PriceOracle`](crate::oracle::PriceOracle)).
 ///
 /// ## Unit conventions
-/// - **credit_price_usd**: price per *one credit* in micro-USD (default 10_000 = $0.01)
+/// - **credit_price_usd**: price per *one credit* in micro-USD (default 100 = $0.00001)
 /// - **isa_price_usd**: ISA/USD spot price in micro-USD (e.g. 500_000 = $0.50)
 /// - **credit_balance**: stored in the same unit as `min_purchase` counts — i.e. whole
 ///   credits (not micro-credits); the docstring "micro-credits" in the struct field
@@ -96,7 +96,7 @@ impl CreditAccount {
 /// ```text
 /// credits = (isa_amount * isa_price_usd) / credit_price_usd
 /// ```
-/// Example: 1 ISA × $0.50/ISA / $0.01/credit = 50 credits
+/// Example: 1 ISA × $0.50/ISA / $0.00001/credit = 50_000 credits
 pub struct CreditSystem {
     /// All credit accounts, keyed by address
     pub accounts: HashMap<Address, CreditAccount>,
@@ -383,16 +383,16 @@ mod tests {
         let mut cs = setup();
 
         // Purchase with 2 ISA at $0.50/ISA
-        // credits = (2_000_000 * 500_000) / (10_000 * 1_000_000) = 100 credits
-        // min_purchase = 100, so exactly at the minimum — should succeed
+        // credits = (2_000_000 * 500_000) / (100 * 1_000_000) = 10_000 credits
+        // min_purchase = 100, so well above the minimum — should succeed
         let isa_amount: Amount = 2_000_000; // 2 ISA in micro-ISA
         let credits = cs
             .purchase_credits(user(), isa_amount, ISA_PRICE, 10)
             .unwrap();
 
-        assert_eq!(credits, 100);
-        assert_eq!(cs.get_balance(&user()), 100);
-        assert_eq!(cs.total_credits_issued, 100);
+        assert_eq!(credits, 10_000);
+        assert_eq!(cs.get_balance(&user()), 10_000);
+        assert_eq!(cs.total_credits_issued, 10_000);
     }
 
     // ----------------------------------------------------------------
@@ -403,17 +403,17 @@ mod tests {
     fn test_purchase_credits_conversion_math() {
         let mut cs = setup();
 
-        // 2 ISA at $0.50/ISA → 100 credits
+        // 2 ISA at $0.50/ISA → 10_000 credits
         let credits = cs
             .purchase_credits(user(), 2_000_000, ISA_PRICE, 1)
             .unwrap();
-        assert_eq!(credits, 100);
+        assert_eq!(credits, 10_000);
 
-        // 10 ISA at $1.00/ISA → 1000 credits
+        // 10 ISA at $1.00/ISA → 100_000 credits
         let credits2 = cs
             .purchase_credits(user2(), 10_000_000, 1_000_000, 2)
             .unwrap();
-        assert_eq!(credits2, 1_000);
+        assert_eq!(credits2, 100_000);
     }
 
     // ----------------------------------------------------------------
@@ -424,11 +424,11 @@ mod tests {
     fn test_spend_credits() {
         let mut cs = setup();
         cs.purchase_credits(user(), 2_000_000, ISA_PRICE, 1)
-            .unwrap(); // 100 credits
+            .unwrap(); // 10_000 credits
 
         cs.spend_credits(&user(), 30).unwrap();
 
-        assert_eq!(cs.get_balance(&user()), 70);
+        assert_eq!(cs.get_balance(&user()), 9_970);
         assert_eq!(cs.total_credits_burned, 30);
 
         let acct = cs.get_account(&user()).unwrap();
@@ -443,13 +443,13 @@ mod tests {
     fn test_spend_insufficient_fails() {
         let mut cs = setup();
         cs.purchase_credits(user(), 2_000_000, ISA_PRICE, 1)
-            .unwrap(); // 100 credits
+            .unwrap(); // 10_000 credits
 
-        let result = cs.spend_credits(&user(), 200);
+        let result = cs.spend_credits(&user(), 20_000);
         assert_eq!(result, Err(CreditError::InsufficientCredits));
 
         // Balance must be unchanged
-        assert_eq!(cs.get_balance(&user()), 100);
+        assert_eq!(cs.get_balance(&user()), 10_000);
     }
 
     // ----------------------------------------------------------------
@@ -460,10 +460,11 @@ mod tests {
     fn test_below_minimum_purchase() {
         let mut cs = setup();
 
-        // With min_purchase = 100, ISA price = $0.50
-        // Need at least 100 credits → 100 * 10_000 / 500_000 = 2 ISA = 2_000_000 micro-ISA
-        // Send only 1_000_000 micro-ISA → 50 credits < 100 minimum
-        let result = cs.purchase_credits(user(), 1_000_000, ISA_PRICE, 1);
+        // With min_purchase = 100, ISA price = $0.50, credit_price = 100 micro-USD
+        // credits = (isa_amount * 500_000) / (100 * 1_000_000) = isa_amount / 200
+        // Need at least 100 credits → isa_amount >= 20_000 micro-ISA
+        // Send only 10_000 micro-ISA → 50 credits < 100 minimum
+        let result = cs.purchase_credits(user(), 10_000, ISA_PRICE, 1);
         assert_eq!(result, Err(CreditError::BelowMinimumPurchase));
     }
 
@@ -484,22 +485,15 @@ mod tests {
 
     #[test]
     fn test_get_isa_cost_for_credits() {
-        // 50 credits × $0.01/credit / $0.50/ISA = 1 ISA = 1_000_000 micro-ISA
-        // isa_cost = 50 * 10_000 / 500_000 = 500_000 / 500_000 = 1 micro-ISA... wait
         // formula: isa_needed = credits * credit_price_usd / isa_price_usd
-        //          = 50 * 10_000 / 500_000 = 1 micro-ISA
-        // That's 1 micro-ISA not 1 ISA because isa_price_usd is per whole ISA in micro-USD.
-        // Correct: 50 credits * 10_000 micro-USD/credit = 500_000 micro-USD total cost
-        //          500_000 micro-USD / 500_000 micro-USD/ISA = 1 ISA = needs scale adjustment
-        // The static function uses DEFAULT_CREDIT_PRICE_USD (10_000) and divides by isa_price_usd.
-        // 50 * 10_000 / 500_000 = 1 → this represents 1 micro-ISA unit at the same scale.
-        // So 100 credits → 100 * 10_000 / 500_000 = 2 micro-ISA units
-        let cost = CreditSystem::get_isa_cost_for_credits(100, ISA_PRICE);
-        assert_eq!(cost, 2);
+        //          = credits * 100 / isa_price_usd
+        // 5_000_000 credits at $0.50/ISA: 5_000_000 * 100 / 500_000 = 1_000 micro-ISA units
+        let cost = CreditSystem::get_isa_cost_for_credits(5_000_000, ISA_PRICE);
+        assert_eq!(cost, 1_000);
 
-        // At $1.00/ISA: 100 credits * $0.01 = $1.00 → 1 ISA (same scale unit)
-        let cost2 = CreditSystem::get_isa_cost_for_credits(100, 1_000_000);
-        assert_eq!(cost2, 1);
+        // At $1.00/ISA: 10_000_000 credits * 100 / 1_000_000 = 1_000 micro-ISA units
+        let cost2 = CreditSystem::get_isa_cost_for_credits(10_000_000, 1_000_000);
+        assert_eq!(cost2, 1_000);
     }
 
     // ----------------------------------------------------------------
@@ -508,13 +502,14 @@ mod tests {
 
     #[test]
     fn test_get_credits_for_isa() {
-        // 1_000_000 micro-ISA at $0.50/ISA → 50 credits
+        // 1_000_000 micro-ISA at $0.50/ISA → 5_000 credits
+        // credits = (1_000_000 * 500_000) / (100 * 1_000_000) = 5_000
         let credits = CreditSystem::credits_for_isa(1_000_000, ISA_PRICE);
-        assert_eq!(credits, 50);
+        assert_eq!(credits, 5_000);
 
-        // 2_000_000 micro-ISA at $1.00/ISA → 200 credits
+        // 2_000_000 micro-ISA at $1.00/ISA → 20_000 credits
         let credits2 = CreditSystem::credits_for_isa(2_000_000, 1_000_000);
-        assert_eq!(credits2, 200);
+        assert_eq!(credits2, 20_000);
 
         // Zero ISA → zero credits
         let credits3 = CreditSystem::credits_for_isa(0, ISA_PRICE);
@@ -574,21 +569,21 @@ mod tests {
     fn test_total_credits_tracking() {
         let mut cs = setup();
 
-        // Issue 100 credits via purchase
+        // Issue 10_000 credits via purchase
         cs.purchase_credits(user(), 2_000_000, ISA_PRICE, 1)
-            .unwrap(); // 100 credits
+            .unwrap(); // 10_000 credits
 
         // Grant 50 more
         cs.grant_credits(user2(), 50, &admin(), 2).unwrap();
 
-        assert_eq!(cs.total_credits_issued, 150);
+        assert_eq!(cs.total_credits_issued, 10_050);
         assert_eq!(cs.total_credits_burned, 0);
-        assert_eq!(cs.total_credits_in_circulation(), 150);
+        assert_eq!(cs.total_credits_in_circulation(), 10_050);
 
         // Spend 30
         cs.spend_credits(&user(), 30).unwrap();
         assert_eq!(cs.total_credits_burned, 30);
-        assert_eq!(cs.total_credits_in_circulation(), 120);
+        assert_eq!(cs.total_credits_in_circulation(), 10_020);
     }
 
     // ----------------------------------------------------------------
@@ -599,19 +594,19 @@ mod tests {
     fn test_multiple_purchases() {
         let mut cs = setup();
 
-        // First purchase: 2 ISA → 100 credits
+        // First purchase: 2 ISA → 10_000 credits
         cs.purchase_credits(user(), 2_000_000, ISA_PRICE, 10)
             .unwrap();
 
-        // Second purchase: 4 ISA → 200 credits
+        // Second purchase: 4 ISA → 20_000 credits
         cs.purchase_credits(user(), 4_000_000, ISA_PRICE, 20)
             .unwrap();
 
         let acct = cs.get_account(&user()).unwrap();
-        assert_eq!(acct.credit_balance, 300);
-        assert_eq!(acct.total_credits_purchased, 300);
+        assert_eq!(acct.credit_balance, 30_000);
+        assert_eq!(acct.total_credits_purchased, 30_000);
         assert_eq!(acct.last_top_up_height, 20);
-        assert_eq!(cs.total_credits_issued, 300);
+        assert_eq!(cs.total_credits_issued, 30_000);
     }
 
     // ----------------------------------------------------------------

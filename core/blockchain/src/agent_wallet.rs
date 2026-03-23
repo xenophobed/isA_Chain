@@ -1,6 +1,12 @@
+use crate::subnet::SubnetId;
 use crate::types::{Address, Amount, BlockHeight, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// ~24 hours at 3-second block times
+const DAILY_BLOCKS: u64 = 28_800;
+/// ~30 days at 3-second block times
+const MONTHLY_BLOCKS: u64 = 864_000;
 
 /// Status of an agent wallet
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +48,20 @@ pub struct AgentWallet {
     pub created_at: BlockHeight,
     /// Cumulative lifetime spending
     pub total_spent: Amount,
+    /// Maximum credits spendable per day (~28,800 blocks at 3s)
+    pub max_daily: Amount,
+    /// Maximum credits spendable per month (~864,000 blocks at 3s)
+    pub max_monthly: Amount,
+    /// Credits spent in the current daily window
+    pub daily_spent: Amount,
+    /// Block height at which the current daily window started
+    pub daily_reset_height: BlockHeight,
+    /// Credits spent in the current monthly window
+    pub monthly_spent: Amount,
+    /// Block height at which the current monthly window started
+    pub monthly_reset_height: BlockHeight,
+    /// If Some, spending is restricted to the listed subnets; None = all subnets allowed
+    pub allowed_subnets: Option<Vec<SubnetId>>,
 }
 
 /// Errors that can arise from agent wallet operations
@@ -70,6 +90,15 @@ pub enum AgentWalletError {
 
     #[error("Invalid amount: must be greater than zero")]
     InvalidAmount,
+
+    #[error("Subnet not allowed for this wallet")]
+    SubnetNotAllowed,
+
+    #[error("Daily spending limit exceeded: limit {limit}, attempted {attempted}")]
+    DailyLimitExceeded { limit: Amount, attempted: Amount },
+
+    #[error("Monthly spending limit exceeded: limit {limit}, attempted {attempted}")]
+    MonthlyLimitExceeded { limit: Amount, attempted: Amount },
 }
 
 /// Factory for creating and managing agent-specific wallets
@@ -110,6 +139,8 @@ impl AgentWalletFactory {
         spending_limit: Amount,
         period_length: u64,
         height: BlockHeight,
+        max_daily: Amount,
+        max_monthly: Amount,
     ) -> Result<Address, AgentWalletError> {
         if self.wallets_by_agent.contains_key(&agent_id) {
             return Err(AgentWalletError::AgentAlreadyHasWallet(agent_id));
@@ -130,6 +161,13 @@ impl AgentWalletFactory {
             status: WalletStatus::Active,
             created_at: height,
             total_spent: 0,
+            max_daily,
+            max_monthly,
+            daily_spent: 0,
+            daily_reset_height: height,
+            monthly_spent: 0,
+            monthly_reset_height: height,
+            allowed_subnets: None,
         };
 
         self.wallets.insert(address, wallet);
@@ -193,13 +231,16 @@ impl AgentWalletFactory {
 
     /// Spend `amount` from a wallet.
     ///
-    /// Automatically resets the spending period if it has expired.
-    /// Checks wallet status, spending limit, and balance.
+    /// Automatically resets the spending period, daily window, and monthly window
+    /// if they have expired. Checks wallet status, spending limit, daily limit,
+    /// monthly limit, and balance. If `subnet` is provided and `allowed_subnets`
+    /// is Some, also checks subnet membership.
     pub fn spend(
         &mut self,
         wallet_address: &Address,
         amount: Amount,
         current_height: BlockHeight,
+        subnet: Option<SubnetId>,
     ) -> Result<(), AgentWalletError> {
         if amount == 0 {
             return Err(AgentWalletError::InvalidAmount);
@@ -217,22 +258,69 @@ impl AgentWalletFactory {
             WalletStatus::Active => {}
         }
 
-        // Auto-reset spending period if expired
+        // Check subnet allowlist
+        if let (Some(allowed), Some(ref requested)) = (&wallet.allowed_subnets, &subnet) {
+            if !allowed.contains(requested) {
+                return Err(AgentWalletError::SubnetNotAllowed);
+            }
+        }
+
+        // Auto-reset period limit if expired
         if current_height >= wallet.period_start_height + wallet.period_length {
             wallet.spent_this_period = 0;
             wallet.period_start_height = current_height;
         }
 
-        // Check spending limit
-        let new_spent = wallet
+        // Auto-reset daily limit if expired
+        if current_height >= wallet.daily_reset_height + DAILY_BLOCKS {
+            wallet.daily_spent = 0;
+            wallet.daily_reset_height = current_height;
+        }
+
+        // Auto-reset monthly limit if expired
+        if current_height >= wallet.monthly_reset_height + MONTHLY_BLOCKS {
+            wallet.monthly_spent = 0;
+            wallet.monthly_reset_height = current_height;
+        }
+
+        // Check period spending limit
+        let new_period_spent = wallet
             .spent_this_period
             .checked_add(amount)
             .unwrap_or(Amount::MAX);
-        if new_spent > wallet.spending_limit {
+        if new_period_spent > wallet.spending_limit {
             return Err(AgentWalletError::SpendingLimitExceeded {
                 limit: wallet.spending_limit,
                 attempted: wallet.spent_this_period + amount,
             });
+        }
+
+        // Check daily limit (0 means unlimited)
+        if wallet.max_daily > 0 {
+            let new_daily = wallet
+                .daily_spent
+                .checked_add(amount)
+                .unwrap_or(Amount::MAX);
+            if new_daily > wallet.max_daily {
+                return Err(AgentWalletError::DailyLimitExceeded {
+                    limit: wallet.max_daily,
+                    attempted: wallet.daily_spent + amount,
+                });
+            }
+        }
+
+        // Check monthly limit (0 means unlimited)
+        if wallet.max_monthly > 0 {
+            let new_monthly = wallet
+                .monthly_spent
+                .checked_add(amount)
+                .unwrap_or(Amount::MAX);
+            if new_monthly > wallet.max_monthly {
+                return Err(AgentWalletError::MonthlyLimitExceeded {
+                    limit: wallet.max_monthly,
+                    attempted: wallet.monthly_spent + amount,
+                });
+            }
         }
 
         // Check balance
@@ -241,7 +329,9 @@ impl AgentWalletFactory {
         }
 
         wallet.balance -= amount;
-        wallet.spent_this_period = new_spent;
+        wallet.spent_this_period = new_period_spent;
+        wallet.daily_spent += amount;
+        wallet.monthly_spent += amount;
         wallet.total_spent += amount;
         Ok(())
     }
@@ -385,7 +475,7 @@ mod tests {
         let owner = make_owner(0xAA);
 
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .expect("should create wallet");
 
         let wallet = factory.get_wallet(&addr).expect("wallet should exist");
@@ -409,10 +499,10 @@ mod tests {
         let owner = make_owner(0xBB);
 
         factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
-        let result = factory.create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 1);
+        let result = factory.create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 1, 0, 0);
         assert_eq!(result, Err(AgentWalletError::AgentAlreadyHasWallet(agent_id)));
     }
 
@@ -426,7 +516,7 @@ mod tests {
         let agent_id = make_agent_id(3);
         let owner = make_owner(0xCC);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.deposit(&addr, ONE_ISA).unwrap();
@@ -448,11 +538,11 @@ mod tests {
         let agent_id = make_agent_id(4);
         let owner = make_owner(0xDD);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.deposit(&addr, ONE_ISA).unwrap();
-        factory.spend(&addr, ONE_ISA / 2, 0).unwrap();
+        factory.spend(&addr, ONE_ISA / 2, 0, None).unwrap();
 
         let wallet = factory.get_wallet(&addr).unwrap();
         assert_eq!(wallet.balance, ONE_ISA / 2);
@@ -470,13 +560,13 @@ mod tests {
         let agent_id = make_agent_id(5);
         let owner = make_owner(0xEE);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         // Fund more than the limit so balance isn't the constraint
         factory.deposit(&addr, ONE_ISA * 10).unwrap();
 
-        let result = factory.spend(&addr, ONE_ISA + 1, 0);
+        let result = factory.spend(&addr, ONE_ISA + 1, 0, None);
         assert!(matches!(
             result,
             Err(AgentWalletError::SpendingLimitExceeded { .. })
@@ -493,13 +583,13 @@ mod tests {
         let agent_id = make_agent_id(6);
         let owner = make_owner(0xFF);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         // Deposit less than we try to spend
         factory.deposit(&addr, 100).unwrap();
 
-        let result = factory.spend(&addr, 200, 0);
+        let result = factory.spend(&addr, 200, 0, None);
         assert_eq!(result, Err(AgentWalletError::InsufficientBalance));
     }
 
@@ -513,13 +603,13 @@ mod tests {
         let agent_id = make_agent_id(7);
         let owner = make_owner(0x11);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.deposit(&addr, ONE_ISA).unwrap();
         factory.freeze(&addr, &owner).unwrap();
 
-        let result = factory.spend(&addr, 100, 0);
+        let result = factory.spend(&addr, 100, 0, None);
         assert_eq!(result, Err(AgentWalletError::WalletFrozen));
     }
 
@@ -533,7 +623,7 @@ mod tests {
         let agent_id = make_agent_id(8);
         let owner = make_owner(0x22);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.freeze(&addr, &owner).unwrap();
@@ -559,7 +649,7 @@ mod tests {
         let agent_id = make_agent_id(9);
         let owner = make_owner(0x33);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.deposit(&addr, ONE_ISA).unwrap();
@@ -587,7 +677,7 @@ mod tests {
         let agent_id = make_agent_id(10);
         let owner = make_owner(0x44);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.set_spending_limit(&addr, ONE_ISA * 5, &owner).unwrap();
@@ -607,13 +697,13 @@ mod tests {
         let agent_id = make_agent_id(11);
         let owner = make_owner(0x55);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         factory.deposit(&addr, ONE_ISA * 10).unwrap();
 
         // Spend up to the limit in period 0
-        factory.spend(&addr, ONE_ISA, 0).unwrap();
+        factory.spend(&addr, ONE_ISA, 0, None).unwrap();
         assert_eq!(
             factory.get_wallet(&addr).unwrap().spent_this_period,
             ONE_ISA
@@ -621,7 +711,7 @@ mod tests {
 
         // Advance past the period boundary — spend should auto-reset
         let next_period_height = DEFAULT_PERIOD; // period_start(0) + period_length(1000) = 1000
-        factory.spend(&addr, ONE_ISA / 2, next_period_height).unwrap();
+        factory.spend(&addr, ONE_ISA / 2, next_period_height, None).unwrap();
 
         let wallet = factory.get_wallet(&addr).unwrap();
         assert_eq!(wallet.spent_this_period, ONE_ISA / 2);
@@ -639,7 +729,7 @@ mod tests {
         let owner = make_owner(0x66);
         let intruder = make_owner(0x77);
         let addr = factory
-            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(agent_id, owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         assert_eq!(
@@ -667,16 +757,16 @@ mod tests {
 
         // Create two wallets for the same owner
         let addr1 = factory
-            .create_wallet(make_agent_id(20), owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(make_agent_id(20), owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
         let addr2 = factory
-            .create_wallet(make_agent_id(21), owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(make_agent_id(21), owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         // Different owner — should not appear
         let other_owner = make_owner(0x99);
         factory
-            .create_wallet(make_agent_id(22), other_owner, ONE_ISA, DEFAULT_PERIOD, 0)
+            .create_wallet(make_agent_id(22), other_owner, ONE_ISA, DEFAULT_PERIOD, 0, 0, 0)
             .unwrap();
 
         let wallets = factory.get_wallets_by_owner(&owner);
@@ -688,5 +778,129 @@ mod tests {
         // Owner with no wallets
         let empty_owner = make_owner(0xAB);
         assert!(factory.get_wallets_by_owner(&empty_owner).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Daily limit
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_daily_limit() {
+        let mut factory = make_factory();
+        let agent_id = make_agent_id(30);
+        let owner = make_owner(0xD0);
+        let daily_limit = ONE_ISA; // 1 ISA per day
+        let addr = factory
+            .create_wallet(agent_id, owner, ONE_ISA * 100, DEFAULT_PERIOD, 0, daily_limit, 0)
+            .unwrap();
+
+        factory.deposit(&addr, ONE_ISA * 10).unwrap();
+
+        // Spend up to the daily limit — should succeed
+        factory.spend(&addr, ONE_ISA, 0, None).unwrap();
+
+        // One more spend in the same day should fail
+        let result = factory.spend(&addr, 1, 0, None);
+        assert!(matches!(
+            result,
+            Err(AgentWalletError::DailyLimitExceeded { .. })
+        ));
+
+        // Advance past one full day — daily counter resets
+        let next_day = DAILY_BLOCKS;
+        factory.spend(&addr, ONE_ISA / 2, next_day, None).unwrap();
+        assert_eq!(
+            factory.get_wallet(&addr).unwrap().daily_spent,
+            ONE_ISA / 2
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Monthly limit
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_monthly_limit() {
+        let mut factory = make_factory();
+        let agent_id = make_agent_id(31);
+        let owner = make_owner(0xD1);
+        let monthly_limit = ONE_ISA * 5; // 5 ISA per month
+        let addr = factory
+            .create_wallet(agent_id, owner, ONE_ISA * 100, DEFAULT_PERIOD, 0, 0, monthly_limit)
+            .unwrap();
+
+        factory.deposit(&addr, ONE_ISA * 20).unwrap();
+
+        // Spend up to the monthly limit
+        factory.spend(&addr, ONE_ISA * 5, 0, None).unwrap();
+
+        // One more spend in same month should fail
+        let result = factory.spend(&addr, 1, 0, None);
+        assert!(matches!(
+            result,
+            Err(AgentWalletError::MonthlyLimitExceeded { .. })
+        ));
+
+        // Advance past one full month — monthly counter resets
+        let next_month = MONTHLY_BLOCKS;
+        factory.spend(&addr, ONE_ISA, next_month, None).unwrap();
+        assert_eq!(
+            factory.get_wallet(&addr).unwrap().monthly_spent,
+            ONE_ISA
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Allowed subnets
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_allowed_subnets() {
+        let mut factory = make_factory();
+        let agent_id = make_agent_id(32);
+        let owner = make_owner(0xD2);
+        let addr = factory
+            .create_wallet(agent_id, owner, ONE_ISA * 100, DEFAULT_PERIOD, 0, 0, 0)
+            .unwrap();
+
+        // Restrict wallet to Model and Tools subnets only
+        factory
+            .get_wallet_mut(&addr)
+            .unwrap()
+            .allowed_subnets = Some(vec![SubnetId::Model, SubnetId::Tools]);
+
+        factory.deposit(&addr, ONE_ISA * 10).unwrap();
+
+        // Spending on an allowed subnet should succeed
+        factory.spend(&addr, ONE_ISA, 0, Some(SubnetId::Model)).unwrap();
+        factory.spend(&addr, ONE_ISA, 0, Some(SubnetId::Tools)).unwrap();
+
+        // Spending with no subnet specified should succeed (not restricted when subnet is None)
+        factory.spend(&addr, ONE_ISA, 0, None).unwrap();
+    }
+
+    #[test]
+    fn test_subnet_not_allowed() {
+        let mut factory = make_factory();
+        let agent_id = make_agent_id(33);
+        let owner = make_owner(0xD3);
+        let addr = factory
+            .create_wallet(agent_id, owner, ONE_ISA * 100, DEFAULT_PERIOD, 0, 0, 0)
+            .unwrap();
+
+        // Only allow Model subnet
+        factory
+            .get_wallet_mut(&addr)
+            .unwrap()
+            .allowed_subnets = Some(vec![SubnetId::Model]);
+
+        factory.deposit(&addr, ONE_ISA * 10).unwrap();
+
+        // Spending on a disallowed subnet should fail
+        let result = factory.spend(&addr, ONE_ISA, 0, Some(SubnetId::Compute));
+        assert_eq!(result, Err(AgentWalletError::SubnetNotAllowed));
+
+        // Spending on the allowed subnet should succeed
+        factory.spend(&addr, ONE_ISA, 0, Some(SubnetId::Model)).unwrap();
     }
 }

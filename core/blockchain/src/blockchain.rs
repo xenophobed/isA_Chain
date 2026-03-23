@@ -5,6 +5,8 @@ use crate::account::Account;
 use crate::token::{TokenState, TokenSupplyInfo, TokenError};
 use crate::mempool::Mempool;
 use crate::error::*;
+use crate::treasury::ProtocolTreasury;
+use crate::staking::StakingVault;
 use std::collections::HashMap;
 
 /// Main blockchain state and logic
@@ -32,6 +34,11 @@ pub struct Blockchain {
 
     /// Native ISA token state (supply accounting + authority lists)
     token_state: TokenState,
+
+    /// Protocol treasury for fee collection
+    treasury: ProtocolTreasury,
+    /// Staking vault for validators/providers
+    staking_vault: StakingVault,
 }
 
 impl Blockchain {
@@ -51,6 +58,8 @@ impl Blockchain {
             accounts: HashMap::new(),
             mempool: Mempool::new(10000),
             token_state: TokenState::new(constants::INITIAL_SUPPLY, Address::ZERO),
+            treasury: ProtocolTreasury::new(constants::PROTOCOL_FEE_PERCENT, Address::ZERO),
+            staking_vault: StakingVault::new(constants::VALIDATOR_MIN_STAKE, 100),
         }
     }
 
@@ -246,6 +255,11 @@ impl Blockchain {
     pub fn token_state_mut(&mut self) -> &mut TokenState {
         &mut self.token_state
     }
+
+    pub fn treasury(&self) -> &ProtocolTreasury { &self.treasury }
+    pub fn treasury_mut(&mut self) -> &mut ProtocolTreasury { &mut self.treasury }
+    pub fn staking_vault(&self) -> &StakingVault { &self.staking_vault }
+    pub fn staking_vault_mut(&mut self) -> &mut StakingVault { &mut self.staking_vault }
 
     /// Mint new ISA tokens to `to`, going through token authority.
     pub fn mint_tokens(

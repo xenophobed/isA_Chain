@@ -6,8 +6,8 @@ use std::collections::HashMap;
 // Constants
 // ====================================================================
 
-/// Default credit price: $0.01 USD = 10_000 micro-USD
-pub const DEPOSIT_DEFAULT_CREDIT_PRICE_USD: Amount = 10_000;
+/// Default credit price: $0.00001 USD = 100 micro-USD
+pub const DEPOSIT_DEFAULT_CREDIT_PRICE_USD: Amount = 100;
 
 /// Micro-USD scale factor: 1_000_000 micro-USD = $1.00
 const MICRO_USD_SCALE: Amount = 1_000_000;
@@ -396,8 +396,8 @@ mod tests {
         assert!(deposit.completed_at.is_none());
         assert!(deposit.tx_hash.is_none());
 
-        // credits = (2_000_000 * 500_000) / (10_000 * 1_000_000) = 100
-        assert_eq!(deposit.credits_to_receive, 100);
+        // credits = (2_000_000 * 500_000) / (100 * 1_000_000) = 10_000
+        assert_eq!(deposit.credits_to_receive, 10_000);
 
         // Should be stored
         assert!(dm.get_deposit(&deposit.id).is_some());
@@ -425,7 +425,7 @@ mod tests {
 
         // Totals updated
         assert_eq!(dm.get_total_deposited(), TWO_ISA);
-        assert_eq!(dm.get_total_credits_issued(), 100);
+        assert_eq!(dm.get_total_credits_issued(), 10_000);
     }
 
     // ----------------------------------------------------------------
@@ -509,14 +509,15 @@ mod tests {
     fn test_credit_calculation() {
         let dm = setup();
 
-        // 2 ISA @ $0.50 → 100 credits
-        assert_eq!(dm.calculate_credits(2_000_000, 500_000), 100);
+        // 2 ISA @ $0.50 → 10_000 credits
+        // (2_000_000 * 500_000) / (100 * 1_000_000) = 10_000
+        assert_eq!(dm.calculate_credits(2_000_000, 500_000), 10_000);
 
-        // 10 ISA @ $1.00 → 1000 credits
-        assert_eq!(dm.calculate_credits(10_000_000, 1_000_000), 1_000);
+        // 10 ISA @ $1.00 → 100_000 credits
+        assert_eq!(dm.calculate_credits(10_000_000, 1_000_000), 100_000);
 
-        // 1 ISA @ $0.50 → 50 credits
-        assert_eq!(dm.calculate_credits(1_000_000, 500_000), 50);
+        // 1 ISA @ $0.50 → 5_000 credits
+        assert_eq!(dm.calculate_credits(1_000_000, 500_000), 5_000);
 
         // 0 ISA → 0 credits
         assert_eq!(dm.calculate_credits(0, 500_000), 0);
@@ -562,17 +563,17 @@ mod tests {
             .initiate_deposit(user2(), 4_000_000, ISA_PRICE, 11)
             .unwrap();
 
-        // Complete first deposit (100 credits, 2_000_000 ISA)
+        // Complete first deposit (10_000 credits, 2_000_000 ISA)
         dm.complete_deposit(&d1.id, Hash::hash_data(b"tx1"), 12)
             .unwrap();
         assert_eq!(dm.get_total_deposited(), TWO_ISA);
-        assert_eq!(dm.get_total_credits_issued(), 100);
+        assert_eq!(dm.get_total_credits_issued(), 10_000);
 
-        // Complete second deposit (200 credits, 4_000_000 ISA)
+        // Complete second deposit (20_000 credits, 4_000_000 ISA)
         dm.complete_deposit(&d2.id, Hash::hash_data(b"tx2"), 13)
             .unwrap();
         assert_eq!(dm.get_total_deposited(), TWO_ISA + 4_000_000);
-        assert_eq!(dm.get_total_credits_issued(), 300);
+        assert_eq!(dm.get_total_credits_issued(), 30_000);
     }
 
     // ----------------------------------------------------------------

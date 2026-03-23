@@ -1,6 +1,4 @@
 // Placeholder for network layer
-use crate::types::*;
-use crate::error::*;
 
 /// P2P network manager
 pub struct NetworkManager {

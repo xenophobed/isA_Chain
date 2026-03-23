@@ -49,6 +49,10 @@ pub struct ProtocolTreasury {
     distributions: Vec<Distribution>,
     /// Address of the treasury admin (only address allowed to distribute)
     admin: Address,
+    /// Share of split distributions going to stakers, in basis points (default 4000 = 40%)
+    pub staker_share_bps: u32,
+    /// Share of split distributions retained by treasury, in basis points (default 6000 = 60%)
+    pub treasury_share_bps: u32,
 }
 
 impl ProtocolTreasury {
@@ -67,6 +71,8 @@ impl ProtocolTreasury {
             fee_rate_bps,
             distributions: Vec::new(),
             admin,
+            staker_share_bps: 4000,
+            treasury_share_bps: 6000,
         }
     }
 
@@ -217,6 +223,79 @@ impl ProtocolTreasury {
         };
         self.distributions.push(distribution.clone());
         Ok(distribution)
+    }
+
+    /// Distribute the current treasury balance using the 60/40 split:
+    /// 40% is distributed proportionally to `stakers`; 60% is retained.
+    ///
+    /// Returns `(staker_distribution, treasury_retention_record)`.
+    /// Only the treasury `admin` may call this.
+    pub fn distribute_with_split(
+        &mut self,
+        stakers: &[(Address, Amount)],
+        height: BlockHeight,
+        admin: &Address,
+    ) -> Result<(Distribution, Distribution), TreasuryError> {
+        if *admin != self.admin {
+            return Err(TreasuryError::UnauthorizedAdmin(*admin));
+        }
+        if stakers.is_empty() {
+            return Err(TreasuryError::NoRecipients);
+        }
+        if self.balance == 0 {
+            return Err(TreasuryError::InsufficientBalance);
+        }
+
+        let total_balance = self.balance;
+        let staker_total = total_balance * self.staker_share_bps as Amount / 10_000;
+        let treasury_retained = total_balance - staker_total;
+
+        if staker_total == 0 {
+            return Err(TreasuryError::ZeroAmount);
+        }
+
+        let total_stake: Amount = stakers.iter().map(|(_, s)| s).sum();
+        if total_stake == 0 {
+            return Err(TreasuryError::ZeroAmount);
+        }
+
+        let mut staker_recipients: Vec<(Address, Amount)> = stakers
+            .iter()
+            .filter_map(|(addr, stake)| {
+                let share = staker_total * stake / total_stake;
+                if share > 0 {
+                    Some((*addr, share))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if staker_recipients.is_empty() {
+            return Err(TreasuryError::ZeroAmount);
+        }
+
+        let actual_staker_total: Amount = staker_recipients.iter().map(|(_, a)| a).sum();
+
+        // Deduct the staker portion from balance (treasury retention stays in balance)
+        self.balance -= actual_staker_total;
+        self.total_distributed += actual_staker_total;
+
+        let staker_distribution = Distribution {
+            recipients: staker_recipients,
+            total_amount: actual_staker_total,
+            height,
+        };
+        self.distributions.push(staker_distribution.clone());
+
+        // Record treasury retention as a distribution to the admin address
+        let treasury_retention = Distribution {
+            recipients: vec![(self.admin, treasury_retained)],
+            total_amount: treasury_retained,
+            height,
+        };
+
+        Ok((staker_distribution, treasury_retention))
     }
 
     // ----------------------------------------------------------------
@@ -498,5 +577,37 @@ mod tests {
         assert_eq!(t.get_distributions().len(), 2);
         assert_eq!(t.get_distributions()[0].height, 1);
         assert_eq!(t.get_distributions()[1].height, 2);
+    }
+
+    // ----------------------------------------------------------------
+    // distribute_with_split
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn test_distribute_with_split() {
+        let mut t = default_treasury();
+        // Deposit 10_000 into treasury
+        t.deposit(10_000).unwrap();
+        assert_eq!(t.get_balance(), 10_000);
+
+        // Two equal stakers
+        let stakers = vec![(staker(0x01), 1_000), (staker(0x02), 1_000)];
+        let (staker_dist, treasury_retention) =
+            t.distribute_with_split(&stakers, 50, &admin()).unwrap();
+
+        // 40% of 10_000 = 4_000 goes to stakers, split equally: 2_000 each
+        assert_eq!(staker_dist.total_amount, 4_000);
+        assert_eq!(staker_dist.height, 50);
+        assert_eq!(staker_dist.recipients.len(), 2);
+        assert_eq!(staker_dist.recipients[0], (staker(0x01), 2_000));
+        assert_eq!(staker_dist.recipients[1], (staker(0x02), 2_000));
+
+        // 60% of 10_000 = 6_000 retained
+        assert_eq!(treasury_retention.total_amount, 6_000);
+        assert_eq!(treasury_retention.recipients[0].0, admin());
+
+        // Balance is reduced only by staker payout; 6_000 stays
+        assert_eq!(t.get_balance(), 6_000);
+        assert_eq!(t.get_total_distributed(), 4_000);
     }
 }

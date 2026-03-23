@@ -1,6 +1,5 @@
 // Placeholder for cryptographic utilities
 use crate::types::*;
-use crate::error::*;
 
 /// Cryptographic utilities
 pub struct CryptoUtils;

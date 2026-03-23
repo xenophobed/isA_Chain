@@ -1,7 +1,6 @@
 // Placeholder for state management
 use crate::types::*;
 use crate::account::Account;
-use crate::error::*;
 use std::collections::HashMap;
 
 /// World state manager

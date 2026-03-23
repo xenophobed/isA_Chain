@@ -1,7 +1,6 @@
 use crate::types::*;
 use crate::transaction::Transaction;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 /// Block header containing metadata
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -16,8 +16,8 @@ pub enum AllocationPurpose {
     Treasury,
     Ecosystem,
     Validators,
-    PublicSale,
-    Liquidity,
+    ProviderIncentives,
+    EarlySupporter,
 }
 
 // ============================================================================
@@ -157,42 +157,41 @@ impl GenesisConfig {
     /// Default mainnet genesis with the canonical ISA token economics.
     ///
     /// Token distribution (1 B ISA total):
-    /// - Team        15% — 150 M ISA (4-year vest, 1-year cliff)
-    /// - Treasury    25% — 250 M ISA (immediate)
-    /// - Ecosystem   30% — 300 M ISA (3-year vest, 6-month cliff)
-    /// - Validators  10% — 100 M ISA (immediate)
-    /// - Public Sale 10% — 100 M ISA (immediate)
-    /// - Liquidity   10% — 100 M ISA (immediate)
+    /// - Community & Ecosystem  40% — 400 M ISA (4-year vest, 6-month cliff)
+    /// - Team & Contributors    20% — 200 M ISA (4-year vest, 1-year cliff)
+    /// - Treasury               15% — 150 M ISA (immediate)
+    /// - Provider Incentives    15% — 150 M ISA (10-year vest, no cliff)
+    /// - Early Supporters       10% — 100 M ISA (2-year vest, 6-month cliff)
     pub fn default_mainnet() -> Self {
         // Approximate block heights (3-second blocks):
         //   6 months  ≈  5_256_000 blocks
         //   1 year    ≈ 10_512_000 blocks
-        //   3 years   ≈ 31_536_000 blocks
+        //   2 years   ≈ 21_024_000 blocks
         //   4 years   ≈ 42_048_000 blocks
+        //  10 years   ≈ 105_120_000 blocks
         const BLOCKS_PER_YEAR: BlockHeight = 10_512_000;
         const CLIFF_6_MONTHS: BlockHeight = BLOCKS_PER_YEAR / 2;
         const CLIFF_1_YEAR: BlockHeight = BLOCKS_PER_YEAR;
-        const END_3_YEARS: BlockHeight = BLOCKS_PER_YEAR * 3;
+        const END_2_YEARS: BlockHeight = BLOCKS_PER_YEAR * 2;
         const END_4_YEARS: BlockHeight = BLOCKS_PER_YEAR * 4;
+        const END_10_YEARS: BlockHeight = BLOCKS_PER_YEAR * 10;
 
         let one_billion: Amount = INITIAL_SUPPLY; // 1B ISA in wei
 
         // Percentages expressed as numerator / 100 of total supply.
-        let team_amount = one_billion * 15 / 100;       // 150 M
-        let treasury_amount = one_billion * 25 / 100;   // 250 M
-        let ecosystem_amount = one_billion * 30 / 100;  // 300 M
-        let validators_amount = one_billion * 10 / 100; // 100 M
-        let public_sale_amount = one_billion * 10 / 100;// 100 M
-        let liquidity_amount = one_billion * 10 / 100;  // 100 M
+        let ecosystem_amount = one_billion * 40 / 100;          // 400 M
+        let team_amount = one_billion * 20 / 100;               // 200 M
+        let treasury_amount = one_billion * 15 / 100;           // 150 M
+        let provider_incentives_amount = one_billion * 15 / 100;// 150 M
+        let early_supporter_amount = one_billion * 10 / 100;    // 100 M
 
         let admin = Address::from([0xAD; 20]);
 
-        let team_addr = Address::from([0x01; 20]);
-        let treasury_addr = Address::from([0x02; 20]);
-        let ecosystem_addr = Address::from([0x03; 20]);
-        let validators_addr = Address::from([0x04; 20]);
-        let public_sale_addr = Address::from([0x05; 20]);
-        let liquidity_addr = Address::from([0x06; 20]);
+        let ecosystem_addr = Address::from([0x01; 20]);
+        let team_addr = Address::from([0x02; 20]);
+        let treasury_addr = Address::from([0x03; 20]);
+        let provider_incentives_addr = Address::from([0x04; 20]);
+        let early_supporter_addr = Address::from([0x05; 20]);
 
         // Immediate allocations (non-vested).
         let allocations = vec![
@@ -201,25 +200,19 @@ impl GenesisConfig {
                 amount: treasury_amount,
                 purpose: AllocationPurpose::Treasury,
             },
-            GenesisAllocation {
-                address: validators_addr,
-                amount: validators_amount,
-                purpose: AllocationPurpose::Validators,
-            },
-            GenesisAllocation {
-                address: public_sale_addr,
-                amount: public_sale_amount,
-                purpose: AllocationPurpose::PublicSale,
-            },
-            GenesisAllocation {
-                address: liquidity_addr,
-                amount: liquidity_amount,
-                purpose: AllocationPurpose::Liquidity,
-            },
         ];
 
         // Vested allocations.
         let vesting_schedules = vec![
+            VestingSchedule {
+                beneficiary: ecosystem_addr,
+                total_amount: ecosystem_amount,
+                released: 0,
+                start_height: 0,
+                cliff_height: CLIFF_6_MONTHS,
+                end_height: END_4_YEARS,
+                purpose: AllocationPurpose::Ecosystem,
+            },
             VestingSchedule {
                 beneficiary: team_addr,
                 total_amount: team_amount,
@@ -230,13 +223,22 @@ impl GenesisConfig {
                 purpose: AllocationPurpose::Team,
             },
             VestingSchedule {
-                beneficiary: ecosystem_addr,
-                total_amount: ecosystem_amount,
+                beneficiary: provider_incentives_addr,
+                total_amount: provider_incentives_amount,
+                released: 0,
+                start_height: 0,
+                cliff_height: 0,
+                end_height: END_10_YEARS,
+                purpose: AllocationPurpose::ProviderIncentives,
+            },
+            VestingSchedule {
+                beneficiary: early_supporter_addr,
+                total_amount: early_supporter_amount,
                 released: 0,
                 start_height: 0,
                 cliff_height: CLIFF_6_MONTHS,
-                end_height: END_3_YEARS,
-                purpose: AllocationPurpose::Ecosystem,
+                end_height: END_2_YEARS,
+                purpose: AllocationPurpose::EarlySupporter,
             },
         ];
 
@@ -369,7 +371,7 @@ mod tests {
         config.allocations.push(GenesisAllocation {
             address: Address::from([0xFF; 20]),
             amount: 1, // faucet already holds full supply
-            purpose: AllocationPurpose::Liquidity,
+            purpose: AllocationPurpose::Treasury,
         });
         assert_eq!(config.validate(), Err(GenesisError::AllocationExceedsSupply));
     }
@@ -381,7 +383,7 @@ mod tests {
         config.allocations.push(GenesisAllocation {
             address: dup_addr,
             amount: 0, // Amount doesn't matter — duplicate check comes first.
-            purpose: AllocationPurpose::Liquidity,
+            purpose: AllocationPurpose::Treasury,
         });
         assert_eq!(
             config.validate(),

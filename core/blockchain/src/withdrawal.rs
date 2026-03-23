@@ -364,8 +364,8 @@ impl WithdrawalManager {
         if isa_price_usd == 0 {
             return 0;
         }
-        // credit_price_usd is the default platform price per credit ($0.01 = 10_000 micro-USD).
-        // isa = net_credits * 10_000 / isa_price_usd
+        // credit_price_usd is the default platform price per credit ($0.00001 = 100 micro-USD).
+        // isa = net_credits * 100 / isa_price_usd
         net_credits
             .checked_mul(crate::credits::DEFAULT_CREDIT_PRICE_USD)
             .map(|v| v / isa_price_usd)
@@ -593,12 +593,12 @@ mod tests {
 
     #[test]
     fn test_isa_calculation() {
-        // 10_000 credits × $0.01/credit / $0.50/ISA = 200 ISA units
-        // = 10_000 * 10_000 / 500_000 = 200
-        assert_eq!(WithdrawalManager::calculate_isa(10_000, ISA_PRICE), 200);
+        // 10_000 credits × $0.00001/credit / $0.50/ISA
+        // = 10_000 * 100 / 500_000 = 2 ISA units
+        assert_eq!(WithdrawalManager::calculate_isa(10_000, ISA_PRICE), 2);
 
-        // At $1.00/ISA: 10_000 * 10_000 / 1_000_000 = 100
-        assert_eq!(WithdrawalManager::calculate_isa(10_000, 1_000_000), 100);
+        // At $1.00/ISA: 10_000 * 100 / 1_000_000 = 1
+        assert_eq!(WithdrawalManager::calculate_isa(10_000, 1_000_000), 1);
 
         // Zero ISA price → 0 (safe)
         assert_eq!(WithdrawalManager::calculate_isa(10_000, 0), 0);

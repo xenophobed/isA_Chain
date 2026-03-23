@@ -94,3 +94,7 @@ pub mod cross_chain;
 pub use cross_chain::*;
 pub mod credit_billing;
 pub use credit_billing::*;
+pub mod billing;
+pub use billing::*;
+pub mod sdk_types;
+pub use sdk_types::*;
