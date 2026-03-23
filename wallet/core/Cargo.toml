@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # Cryptography
+blake3 = { workspace = true }
 sha2 = { workspace = true }
 secp256k1 = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -29,7 +30,7 @@ scrypt = "0.11"
 
 # BIP standards
 bip32 = "0.5"
-bip39 = "2.0"
+bip39 = { version = "2.0", features = ["all-languages", "rand"] }
 bech32 = "0.9"
 
 # Error handling

@@ -12,6 +12,7 @@ pub enum KeystoreType {
 
 #[derive(Debug, ZeroizeOnDrop)]
 pub struct Keystore {
+    #[zeroize(skip)]
     keystore_type: KeystoreType,
     encrypted_data: Vec<u8>,
     // TODO: Add crypto fields

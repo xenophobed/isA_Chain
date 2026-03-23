@@ -14,31 +14,41 @@ use std::collections::HashMap;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Main wallet structure
-#[derive(Debug)]
 pub struct Wallet {
     /// Wallet ID
     pub id: String,
-    
+
     /// Wallet name
     pub name: String,
-    
+
     /// Wallet type
     pub wallet_type: WalletType,
-    
+
     /// Encrypted keystore
     keystore: Keystore,
-    
+
     /// Accounts derived from keystore
     accounts: HashMap<Address, WalletAccount>,
-    
+
     /// Storage backend
     storage: Box<dyn Storage>,
-    
+
     /// Current account index for derivation
     account_index: u32,
-    
+
     /// Network configuration
     network: NetworkConfig,
+}
+
+impl std::fmt::Debug for Wallet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Wallet")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("wallet_type", &self.wallet_type)
+            .field("account_index", &self.account_index)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Wallet types

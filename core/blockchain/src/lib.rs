@@ -32,6 +32,8 @@ pub mod reputation;
 pub mod compute_subnet;
 pub mod fee_routing;
 pub mod staking_discount;
+pub mod settlement_proof;
+pub mod settlement_fallback;
 
 pub use types::*;
 pub use block::*;
@@ -62,6 +64,8 @@ pub use reputation::*;
 pub use compute_subnet::*;
 pub use fee_routing::*;
 pub use staking_discount::*;
+pub use settlement_proof::*;
+pub use settlement_fallback::*;
 pub mod budget;
 pub use budget::*;
 pub mod emission;

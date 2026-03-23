@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 #[async_trait]
-pub trait Storage: Send + Sync {
+pub trait Storage: Send + Sync + std::fmt::Debug {
     async fn save_wallet_data(&self, data: &WalletData) -> Result<(), WalletError>;
     async fn load_wallet_data(&self) -> Result<WalletData, WalletError>;
     async fn save_accounts(&self, accounts: &HashMap<Address, WalletAccount>) -> Result<(), WalletError>;
@@ -14,6 +14,7 @@ pub trait Storage: Send + Sync {
     async fn delete_all(&self) -> Result<(), WalletError>;
 }
 
+#[derive(Debug)]
 pub struct WalletStorage {
     _path: String,
     // TODO: Add sled database instance
