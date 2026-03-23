@@ -8,7 +8,7 @@ use std::collections::HashMap;
 // ============================================================================
 
 /// Which isA service was billed for this settlement.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ServiceType {
     /// isA_Model — model inference
     ModelInference,

@@ -92,3 +92,5 @@ pub mod credit_bridge;
 pub use credit_bridge::*;
 pub mod cross_chain;
 pub use cross_chain::*;
+pub mod credit_billing;
+pub use credit_billing::*;
