@@ -290,4 +290,27 @@ impl Blockchain {
     pub fn get_token_supply(&self) -> TokenSupplyInfo {
         self.token_state.get_supply_info()
     }
+
+    /// Get a block by height by scanning block storage.
+    pub fn get_block_by_height(&self, height: BlockHeight) -> Option<&Block> {
+        if height == 0 {
+            return self.blocks.get(&self.genesis_hash);
+        }
+        self.blocks.values().find(|b| b.header.height == height)
+    }
+
+    /// Get the latest (head) block.
+    pub fn get_latest_block(&self) -> Option<&Block> {
+        self.blocks.get(&self.head)
+    }
+
+    /// Get a pending transaction from the mempool by hash.
+    pub fn get_pending_transaction(&self, hash: &Hash) -> Option<&Transaction> {
+        self.mempool.get_transaction(hash)
+    }
+
+    /// Number of pending transactions in the mempool.
+    pub fn pending_transaction_count(&self) -> usize {
+        self.mempool.len()
+    }
 }
