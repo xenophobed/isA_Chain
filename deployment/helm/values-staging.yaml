@@ -1,0 +1,26 @@
+# =============================================================================
+# isA_Chain Blockchain Node - Staging Overrides
+# =============================================================================
+# Usage:
+#   helm upgrade --install blockchain-node \
+#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
+#     -f deployment/helm/values.yaml \
+#     -f deployment/helm/values-staging.yaml \
+#     -n isa-cloud-staging
+# =============================================================================
+
+namespace: isa-cloud-staging
+
+image:
+  tag: staging
+
+env:
+  - name: CHAIN_ID
+    value: "15490"  # Testnet
+  - name: RUST_LOG
+    value: "isa_chain=debug"
+
+persistence:
+  size: 10Gi
+
+replicas: 1

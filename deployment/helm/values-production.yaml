@@ -1,0 +1,35 @@
+# =============================================================================
+# isA_Chain Blockchain Node - Production Overrides
+# =============================================================================
+# Usage:
+#   helm upgrade --install blockchain-node \
+#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
+#     -f deployment/helm/values.yaml \
+#     -f deployment/helm/values-production.yaml \
+#     -n isa-cloud-production
+# =============================================================================
+
+namespace: isa-cloud-production
+
+image:
+  tag: stable
+
+env:
+  - name: CHAIN_ID
+    value: "15489"  # Mainnet
+  - name: RUST_LOG
+    value: "isa_chain=info,warn"
+
+persistence:
+  size: 100Gi
+  storageClass: gp3  # AWS EBS gp3
+
+replicas: 3
+
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"

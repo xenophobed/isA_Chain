@@ -1,0 +1,103 @@
+# =============================================================================
+# isA_Chain Blockchain Node - Base Helm Values
+# =============================================================================
+# Minimal base values. Use environment-specific files for deployment:
+#
+#   # Staging
+#   helm upgrade --install blockchain-node \
+#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
+#     -f deployment/helm/values.yaml \
+#     -f deployment/helm/values-staging.yaml \
+#     -n isa-cloud-staging
+#
+#   # Production
+#   helm upgrade --install blockchain-node \
+#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
+#     -f deployment/helm/values.yaml \
+#     -f deployment/helm/values-production.yaml \
+#     -n isa-cloud-production
+# =============================================================================
+
+name: blockchain-node
+namespace: isa-cloud-staging
+
+image:
+  registry: harbor.local:30443
+  repository: isa/blockchain-node
+  tag: latest
+  pullPolicy: IfNotPresent
+
+port: 9944
+metricsPort: 9944
+
+replicas: 1
+
+# StatefulSet for stable storage
+kind: StatefulSet
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "200m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+autoscaling:
+  enabled: false  # StatefulSet, manual scaling
+
+health:
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 15
+
+service:
+  type: ClusterIP
+
+consul:
+  enabled: true
+  serviceName: blockchain-node
+  metadata:
+    api_path: /api/v1/chain
+    chain_id: "15489"
+    rpc_port: "9944"
+
+observability:
+  tempoHost: "tempo.isa-cloud-local.svc.cluster.local"
+  tempoPort: "4317"
+  lokiUrl: "http://loki.isa-cloud-local.svc.cluster.local:3100"
+  isaEnv: "staging"
+
+env:
+  - name: CHAIN_ID
+    value: "15489"
+  - name: RPC_PORT
+    value: "9944"
+  - name: BLOCK_TIME_SECS
+    value: "3"
+  - name: DATA_DIR
+    value: "/data"
+  - name: PERSIST
+    value: "true"
+  - name: RUST_LOG
+    value: "isa_chain=info"
+  - name: NATS_URL
+    value: "nats://nats.isa-cloud-staging.svc.cluster.local:4222"
+
+persistence:
+  enabled: true
+  size: 10Gi
+  mountPath: /data
+  storageClass: standard
+
+security:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # RocksDB needs write access
+    capabilities:
+      drop: ["ALL"]
