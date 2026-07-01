@@ -91,6 +91,7 @@ typechain-types/
 # Local development
 .local/
 dev/
+.claude/
 
 # Test results
 test-results/
