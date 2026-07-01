@@ -32,9 +32,6 @@ metricsPort: 9944
 
 replicas: 1
 
-# StatefulSet for stable storage
-kind: StatefulSet
-
 resources:
   requests:
     memory: "256Mi"
@@ -84,20 +81,25 @@ env:
   - name: NATS_URL
     value: "nats://nats.isa-cloud-staging.svc.cluster.local:4222"
 
-persistence:
-  enabled: true
-  size: 10Gi
-  mountPath: /data
-  storageClass: standard
+# Volume mounts for RocksDB persistent storage
+volumeMounts:
+  - name: blockchain-data
+    mountPath: /data
 
-security:
-  podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
-  securityContext:
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: false  # RocksDB needs write access
-    capabilities:
-      drop: ["ALL"]
+volumes:
+  - name: blockchain-data
+    persistentVolumeClaim:
+      claimName: blockchain-data
+
+# Security contexts (top-level, as expected by isa-service chart)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # RocksDB needs write access
+  capabilities:
+    drop: ["ALL"]
