@@ -96,3 +96,10 @@ dev/
 # Test results
 test-results/
 coverage/
+
+# worktrees protection
+worktrees/
+_worktrees/
+.worktrees/
+backups/
+*.dump
