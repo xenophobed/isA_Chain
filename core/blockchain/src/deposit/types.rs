@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 /// Default credit price: $0.00001 USD = 100 micro-USD
 pub const DEPOSIT_DEFAULT_CREDIT_PRICE_USD: Amount = 100;
 
-/// Micro-USD scale factor: 1_000_000 micro-USD = $1.00
-pub(crate) const MICRO_USD_SCALE: Amount = 1_000_000;
 
 // ====================================================================
 // DepositStatus

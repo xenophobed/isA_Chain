@@ -1,7 +1,9 @@
 use crate::types::{Address, Amount, BlockHeight, Hash};
 use std::collections::HashMap;
 
-use super::types::{DepositError, DepositRequest, DepositStatus, MICRO_USD_SCALE};
+use super::types::{DepositError, DepositRequest, DepositStatus};
+
+const MICRO_USD_SCALE: Amount = 1_000_000;
 
 // ====================================================================
 // DepositManager
