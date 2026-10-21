@@ -351,7 +351,7 @@ pub enum BlockError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction::{TransactionData, TransactionType};
+    use crate::transaction::TransactionData;
     
     #[test]
     fn test_genesis_block_creation() {

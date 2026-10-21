@@ -1,5 +1,5 @@
-pub mod factory;
-pub mod types;
+mod factory;
+mod types;
 
 #[cfg(test)]
 mod tests;

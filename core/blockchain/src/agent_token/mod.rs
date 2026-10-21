@@ -4,9 +4,9 @@
 //! allowing users to invest in agent performance. Each agent can have exactly
 //! one token, and pricing follows a configurable curve tied to token supply.
 
-pub mod curve;
-pub mod factory;
-pub mod types;
+mod curve;
+mod factory;
+mod types;
 
 #[cfg(test)]
 mod tests;
