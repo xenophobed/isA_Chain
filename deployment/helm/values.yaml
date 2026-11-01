@@ -1,23 +1,6 @@
 # =============================================================================
-# isA_Chain Blockchain Node - Base Helm Values
+# isA_Chain Blockchain Node - Base Helm Values (Aligned with isa-service)
 # =============================================================================
-# Minimal base values. Use environment-specific files for deployment:
-#
-#   # Staging
-#   helm upgrade --install blockchain-node \
-#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
-#     -f deployment/helm/values.yaml \
-#     -f deployment/helm/values-staging.yaml \
-#     -n isa-cloud-staging
-#
-#   # Production
-#   helm upgrade --install blockchain-node \
-#     ~/Documents/Fun/isA/isA_Cloud/deployments/charts/isa-service \
-#     -f deployment/helm/values.yaml \
-#     -f deployment/helm/values-production.yaml \
-#     -n isa-cloud-production
-# =============================================================================
-
 name: blockchain-node
 namespace: isa-cloud-staging
 
@@ -41,7 +24,7 @@ resources:
     cpu: "1000m"
 
 autoscaling:
-  enabled: false  # StatefulSet, manual scaling
+  enabled: false  # StatefulSet/Single-node RocksDB, manual scaling
 
 health:
   path: /health
@@ -81,7 +64,13 @@ env:
   - name: NATS_URL
     value: "nats://nats.isa-cloud-staging.svc.cluster.local:4222"
 
-# Volume mounts for RocksDB persistent storage
+# RocksDB persistent storage via isa-service PVC template
+persistentVolumeClaims:
+  - name: blockchain-data
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+
 volumeMounts:
   - name: blockchain-data
     mountPath: /data
@@ -91,7 +80,7 @@ volumes:
     persistentVolumeClaim:
       claimName: blockchain-data
 
-# Security contexts (top-level, as expected by isa-service chart)
+# Security contexts
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
