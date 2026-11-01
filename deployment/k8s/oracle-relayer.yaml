@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: isa-oracle-relayer
+  namespace: isa-chain
+  labels:
+    app: isa-oracle-relayer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: isa-oracle-relayer
+  template:
+    metadata:
+      labels:
+        app: isa-oracle-relayer
+    spec:
+      containers:
+      - name: relayer
+        image: us-central1-docker.pkg.dev/project-sweet-498401/isa-saas/isa-user-shared@sha256:0e4a8630937ac0a1a089b17e207b9840859e96e9c92f56bb43afc2eeff23d85f
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "/app/relayer/relayer_daemon.py"]
+        env:
+        - name: CHAIN_RPC_URL
+          value: "http://blockchain-node.isa-chain.svc.cluster.local:9944"
+        - name: WALLET_SERVICE_URL
+          value: "http://user-wallet.isa-saas.svc.cluster.local:8208"
+        - name: INTERNAL_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: isa-oracle-secrets
+              key: INTERNAL_SERVICE_SECRET
+        - name: SYNC_INTERVAL_SECS
+          value: "5"
+        volumeMounts:
+        - name: code-volume
+          mountPath: /app/relayer
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+      volumes:
+      - name: code-volume
+        configMap:
+          name: isa-oracle-relayer-code
