@@ -78,6 +78,7 @@ pub const METHOD_CHAIN_GET_CHAIN_ID: &str = "chain_getChainId";
 pub const METHOD_WALLET_GET_BALANCE: &str = "wallet_getBalance";
 pub const METHOD_WALLET_GET_NONCE: &str = "wallet_getNonce";
 pub const METHOD_WALLET_GET_ACCOUNT: &str = "wallet_getAccount";
+pub const METHOD_FAUCET_REQUEST: &str = "faucet_request";
 
 // ---------------------------------------------------------------------------
 // Transaction methods

@@ -114,4 +114,54 @@ impl RpcHandler {
             .collect();
         JsonRpcResponse::success(id, json!(tx_list))
     }
+
+    /// faucet_request(address, [amount]) — transfer ISA tokens from testnet faucet to address
+    pub(crate) async fn handle_faucet_request(&self, id: Value, params: Value) -> JsonRpcResponse {
+        let address = match parse_address_param(&params, 0) {
+            Ok(a) => a,
+            Err(mut e) => {
+                e.id = id;
+                return e;
+            }
+        };
+
+        // Default: 100 ISA (100 * 10^18 wei)
+        let default_amount: crate::types::Amount = 100_000_000_000_000_000_000;
+        let amount: crate::types::Amount = if let Some(arr) = params.as_array() {
+            if let Some(val) = arr.get(1) {
+                if let Some(num) = val.as_u64() {
+                    num as u128
+                } else if let Some(s) = val.as_str() {
+                    s.parse::<u128>().unwrap_or(default_amount)
+                } else {
+                    default_amount
+                }
+            } else {
+                default_amount
+            }
+        } else {
+            default_amount
+        };
+
+        let mut blockchain = self.blockchain.write().await;
+        let height = blockchain.get_height();
+        match blockchain.faucet_transfer(address, amount) {
+            Ok(new_balance) => {
+                tracing::info!("Faucet drip of {} ISA to 0x{}", amount, hex::encode(address.as_bytes()));
+                JsonRpcResponse::success(
+                    id,
+                    json!({
+                        "recipient": format!("0x{}", hex::encode(address.as_bytes())),
+                        "amount_drip": amount.to_string(),
+                        "new_balance": new_balance.to_string(),
+                        "status": "success",
+                        "tx_hash": format!("0x{}", hex::encode(crate::types::Hash::hash_data(format!("faucet:{}:{}", hex::encode(address.as_bytes()), height).as_bytes()).as_bytes()))
+                    }),
+                )
+            }
+            Err(e) => {
+                JsonRpcResponse::error(id, ERROR_INTERNAL, format!("Faucet transfer failed: {}", e))
+            }
+        }
+    }
 }

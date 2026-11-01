@@ -85,6 +85,7 @@ impl RpcHandler {
             METHOD_WALLET_GET_BALANCE => self.handle_wallet_get_balance(req.id, req.params).await,
             METHOD_WALLET_GET_NONCE => self.handle_wallet_get_nonce(req.id, req.params).await,
             METHOD_WALLET_GET_ACCOUNT => self.handle_wallet_get_account(req.id, req.params).await,
+            METHOD_FAUCET_REQUEST => self.handle_faucet_request(req.id, req.params).await,
 
             // ---- Transaction methods ----
             METHOD_TX_SUBMIT => self.handle_tx_submit(req.id, req.params).await,

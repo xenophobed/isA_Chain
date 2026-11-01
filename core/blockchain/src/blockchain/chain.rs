@@ -212,6 +212,34 @@ impl Blockchain {
         }
     }
 
+    /// Transfer tokens from the genesis faucet account (for testnet faucet dripping).
+    pub fn faucet_transfer(&mut self, to: Address, amount: Amount) -> Result<Amount, &'static str> {
+        let faucet = Address::from([0xFA; 20]);
+        let faucet_balance = self.get_balance(&faucet);
+        if faucet_balance < amount {
+            return Err("Faucet balance insufficient");
+        }
+
+        if let Some(faucet_acc) = self.accounts.get_mut(&faucet) {
+            faucet_acc.balance -= amount;
+            if let Some(ref mut db) = self.storage {
+                let _ = db.put_account(faucet, faucet_acc.clone());
+            }
+        }
+
+        self.accounts.entry(to)
+            .and_modify(|acc| acc.balance += amount)
+            .or_insert_with(|| Account::new_external(amount));
+
+        if let Some(ref mut db) = self.storage {
+            if let Some(acc) = self.accounts.get(&to) {
+                let _ = db.put_account(to, acc.clone());
+            }
+        }
+
+        Ok(self.get_balance(&to))
+    }
+
     // ----------------------------------------------------------------
     // Token-state integration
     // ----------------------------------------------------------------
