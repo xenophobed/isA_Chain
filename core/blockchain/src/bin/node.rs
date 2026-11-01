@@ -51,13 +51,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blockchain = Arc::new(RwLock::new(blockchain));
 
     // Start block producer
+    let produce_empty = env::var("PRODUCE_EMPTY_BLOCKS")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(true); // Default to true in node runner to actively produce blocks
+
     let consensus = Arc::new(RwLock::new(ConsensusEngine::new()));
-    let block_producer = BlockProducer::new(
+    let mut block_producer = BlockProducer::new(
         blockchain.clone(),
         consensus,
         block_time,
         100,
     );
+    block_producer.produce_empty_blocks = produce_empty;
+
+    info!("Block producer configured (produce_empty_blocks: {})", produce_empty);
     tokio::spawn(async move {
         block_producer.start().await;
     });

@@ -122,13 +122,28 @@ impl Blockchain {
             let mut blocks = HashMap::new();
             blocks.insert(genesis_hash, genesis);
 
+            // Populate accounts with initial genesis allocations
+            let mut accounts = HashMap::new();
+            let genesis_config = if chain_id == crate::types::constants::TEST_CHAIN_ID {
+                crate::genesis::GenesisConfig::default_testnet()
+            } else {
+                crate::genesis::GenesisConfig::default_mainnet()
+            };
+
+            for allocation in genesis_config.allocations {
+                let account = Account::new_external(allocation.amount);
+                storage.put_account(allocation.address, account.clone())
+                    .map_err(BlockchainError::Storage)?;
+                accounts.insert(allocation.address, account);
+            }
+
             Ok(Blockchain {
                 chain_id,
                 head: genesis_hash,
                 height: 0,
                 genesis_hash,
                 blocks,
-                accounts: HashMap::new(),
+                accounts,
                 mempool: Mempool::new(10000),
                 token_state: TokenState::new(constants::INITIAL_SUPPLY, Address::ZERO),
                 treasury: ProtocolTreasury::new(constants::PROTOCOL_FEE_PERCENT, Address::ZERO),
