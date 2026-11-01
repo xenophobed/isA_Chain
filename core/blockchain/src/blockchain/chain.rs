@@ -185,10 +185,15 @@ impl Blockchain {
     }
 
     pub fn get_balance(&self, address: &Address) -> Amount {
-        self.accounts
-            .get(address)
-            .map(|account| account.balance)
-            .unwrap_or(0)
+        if let Some(account) = self.accounts.get(address) {
+            return account.balance;
+        }
+        if let Some(ref db) = self.storage {
+            if let Ok(Some(account)) = db.get_account(address) {
+                return account.balance;
+            }
+        }
+        0
     }
 
     pub fn get_nonce(&self, address: &Address) -> u64 {
@@ -215,16 +220,17 @@ impl Blockchain {
     /// Transfer tokens from the genesis faucet account (for testnet faucet dripping).
     pub fn faucet_transfer(&mut self, to: Address, amount: Amount) -> Result<Amount, &'static str> {
         let faucet = Address::from([0xFA; 20]);
-        let faucet_balance = self.get_balance(&faucet);
-        if faucet_balance < amount {
-            return Err("Faucet balance insufficient");
+        let mut faucet_acc = self.get_account_mut_or_load(&faucet)
+            .unwrap_or_else(|| Account::new_external(crate::types::constants::INITIAL_SUPPLY));
+
+        if faucet_acc.balance < amount {
+            faucet_acc.balance = crate::types::constants::INITIAL_SUPPLY;
         }
 
-        if let Some(faucet_acc) = self.accounts.get_mut(&faucet) {
-            faucet_acc.balance -= amount;
-            if let Some(ref mut db) = self.storage {
-                let _ = db.put_account(faucet, faucet_acc.clone());
-            }
+        faucet_acc.balance -= amount;
+        self.accounts.insert(faucet, faucet_acc.clone());
+        if let Some(ref mut db) = self.storage {
+            let _ = db.put_account(faucet, faucet_acc);
         }
 
         self.accounts.entry(to)
