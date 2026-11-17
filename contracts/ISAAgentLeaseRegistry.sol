@@ -4,7 +4,8 @@ pragma solidity ^0.8.20;
 /**
  * @title ISAAgentLeaseRegistry
  * @notice Tier 0 Hardware-Anchored Decentralized Action Lease & Merkle Audit Anchor Registry for isA_AEP.
- * Enforces hardware trust root bindings (Secure Enclave / StrongBox) and physical action leases with on-chain slashing.
+ * Enforces hardware trust root bindings (Secure Enclave / StrongBox), physical action leases,
+ * and Smart Account Budget Invariant Enforcement (#1853).
  */
 contract ISAAgentLeaseRegistry {
     address public owner;
@@ -23,6 +24,9 @@ contract ISAAgentLeaseRegistry {
         uint256 validUntil;     // Unix timestamp expiration
         LeaseStatus status;     // Active, Revoked, Expired
         string allowedActions;  // Scoped action mask (e.g. "mcp:exec,db:write")
+        uint256 maxAutonomousBudget; // Maximum autonomous spending ceiling in cents (#1853)
+        uint256 spentBudget;         // Cumulative autonomous funds consumed (#1853)
+        string allowedDomains;       // Comma-separated domain allowlist (#1853)
         uint256 createdAt;
     }
 
@@ -43,9 +47,18 @@ contract ISAAgentLeaseRegistry {
     // Sequential list of audit batch IDs for timeline verification
     bytes32[] public auditBatchHistory;
 
-    event LeaseGranted(bytes32 indexed leaseId, string indexed did, address indexed hardwareAddress, uint256 validUntil, string allowedActions);
+    event LeaseGranted(
+        bytes32 indexed leaseId,
+        string indexed did,
+        address indexed hardwareAddress,
+        uint256 validUntil,
+        string allowedActions,
+        uint256 maxAutonomousBudget,
+        string allowedDomains
+    );
     event LeaseRevoked(bytes32 indexed leaseId, string reason, uint256 timestamp);
     event AuditBatchAnchored(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 eventCount, string clusterId, uint256 timestamp);
+    event LeasePaymentExecuted(bytes32 indexed leaseId, uint256 amount, uint256 spentBudget, string targetDomain, uint256 timestamp);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Caller is not the contract owner");
@@ -66,6 +79,33 @@ contract ISAAgentLeaseRegistry {
         uint256 durationSeconds,
         string calldata allowedActions
     ) external onlyOwner {
+        _grantLeaseInternal(leaseId, did, hardwareAddress, durationSeconds, allowedActions, 0, "*");
+    }
+
+    /**
+     * @notice Grants a hardware-anchored Smart Account action lease with strict budget and domain invariants (#1853).
+     */
+    function grantSmartAccountLease(
+        bytes32 leaseId,
+        string calldata did,
+        address hardwareAddress,
+        uint256 durationSeconds,
+        string calldata allowedActions,
+        uint256 maxAutonomousBudget,
+        string calldata allowedDomains
+    ) external onlyOwner {
+        _grantLeaseInternal(leaseId, did, hardwareAddress, durationSeconds, allowedActions, maxAutonomousBudget, allowedDomains);
+    }
+
+    function _grantLeaseInternal(
+        bytes32 leaseId,
+        string calldata did,
+        address hardwareAddress,
+        uint256 durationSeconds,
+        string calldata allowedActions,
+        uint256 maxAutonomousBudget,
+        string memory allowedDomains
+    ) internal {
         require(leaseId != bytes32(0), "Invalid leaseId");
         require(durationSeconds > 0, "Duration must be positive");
 
@@ -77,11 +117,33 @@ contract ISAAgentLeaseRegistry {
             validUntil: validUntil,
             status: LeaseStatus.Active,
             allowedActions: allowedActions,
+            maxAutonomousBudget: maxAutonomousBudget,
+            spentBudget: 0,
+            allowedDomains: allowedDomains,
             createdAt: block.timestamp
         });
 
         didLeases[did].push(leaseId);
-        emit LeaseGranted(leaseId, did, hardwareAddress, validUntil, allowedActions);
+        emit LeaseGranted(leaseId, did, hardwareAddress, validUntil, allowedActions, maxAutonomousBudget, allowedDomains);
+    }
+
+    /**
+     * @notice Executes and audits an autonomous payment against an active lease, strictly enforcing budget limits (#1853).
+     */
+    function recordLeasePayment(
+        bytes32 leaseId,
+        string calldata did,
+        uint256 amount,
+        string calldata targetDomain
+    ) external onlyOwner {
+        (bool valid, string memory reason) = this.isLeaseValid(leaseId, did);
+        require(valid, reason);
+
+        ActionLease storage lease = leases[leaseId];
+        require(lease.spentBudget + amount <= lease.maxAutonomousBudget, "BudgetExceeded: payment exceeds maxAutonomousBudget");
+
+        lease.spentBudget += amount;
+        emit LeasePaymentExecuted(leaseId, amount, lease.spentBudget, targetDomain, block.timestamp);
     }
 
     /**
