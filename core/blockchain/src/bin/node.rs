@@ -9,8 +9,9 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
+    // Initialize structured JSON logging per ADR-0001
     tracing_subscriber::fmt()
+        .json()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive("isa_chain=info".parse()?)

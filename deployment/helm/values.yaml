@@ -42,11 +42,25 @@ consul:
     chain_id: "15489"
     rpc_port: "9944"
 
+# Prometheus metrics scraping per ADR-0001
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9944"
+  prometheus.io/path: "/metrics"
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+  path: /metrics
+  port: 9944
+
+# Observability configuration per ADR-0001 (metrics-only for now; traces/logs deferred)
 observability:
-  tempoHost: "tempo.isa-cloud-local.svc.cluster.local"
-  tempoPort: "4317"
-  lokiUrl: "http://loki.isa-cloud-local.svc.cluster.local:3100"
+  metricsOnly: true
   isaEnv: "staging"
+  # Note: tempoHost, tempoPort, lokiUrl are formally deferred per ADR-0001
+  # and will be wired when platform-wide OTEL standard lands.
 
 env:
   - name: CHAIN_ID
