@@ -21,7 +21,7 @@ describe("SimpleDEX", function () {
     await tokenC.deployed();
     
     // Deploy DEX
-    const SimpleDEX = await ethers.getContractFactory("SimpleDEX");
+    const SimpleDEX = await ethers.getContractFactory("contracts/solidity/defi/SimpleDEX.sol:SimpleDEX");
     dex = await SimpleDEX.deploy(feeCollector.address);
     await dex.deployed();
     

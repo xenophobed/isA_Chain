@@ -10,7 +10,7 @@ describe("NFTMarketplace", function () {
     [owner, feeRecipient, seller, buyer, artist, treasury, royaltyRecipient] = await ethers.getSigners();
     
     // Deploy NFT contract for testing
-    const ISANFT = await ethers.getContractFactory("ISANFT");
+    const ISANFT = await ethers.getContractFactory("contracts/solidity/nft/ISANFT.sol:ISANFT");
     nft = await ISANFT.deploy(treasury.address, artist.address, royaltyRecipient.address);
     await nft.deployed();
     
@@ -20,7 +20,7 @@ describe("NFTMarketplace", function () {
     await token.deployed();
     
     // Deploy marketplace
-    const NFTMarketplace = await ethers.getContractFactory("NFTMarketplace");
+    const NFTMarketplace = await ethers.getContractFactory("contracts/solidity/nft/NFTMarketplace.sol:NFTMarketplace");
     marketplace = await NFTMarketplace.deploy(feeRecipient.address);
     await marketplace.deployed();
     
@@ -57,7 +57,7 @@ describe("NFTMarketplace", function () {
 
   describe("Collection Management", function () {
     it("Should approve collection", async function () {
-      const newCollection = await (await ethers.getContractFactory("ISANFT"))
+      const newCollection = await (await ethers.getContractFactory("contracts/solidity/nft/ISANFT.sol:ISANFT"))
         .deploy(treasury.address, artist.address, royaltyRecipient.address);
       
       await expect(marketplace.setCollectionApproval(newCollection.address, true))

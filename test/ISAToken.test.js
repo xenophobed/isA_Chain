@@ -8,7 +8,7 @@ describe("ISAToken", function () {
   beforeEach(async function () {
     [owner, treasury, addr1, addr2, addr3] = await ethers.getSigners();
     
-    const ISAToken = await ethers.getContractFactory("ISAToken");
+    const ISAToken = await ethers.getContractFactory("contracts/solidity/tokens/ISAToken.sol:ISAToken");
     isaToken = await ISAToken.deploy(treasury.address);
     await isaToken.deployed();
   });

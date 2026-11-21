@@ -8,7 +8,7 @@ describe("ISANFT - Lifecycle & Management", function () {
   beforeEach(async function () {
     [owner, treasury, artist, royaltyRecipient, addr1, addr2, addr3] = await ethers.getSigners();
     
-    const ISANFT = await ethers.getContractFactory("ISANFT");
+    const ISANFT = await ethers.getContractFactory("contracts/solidity/nft/ISANFT.sol:ISANFT");
     isaNFT = await ISANFT.deploy(
       treasury.address,
       artist.address,
@@ -50,7 +50,7 @@ describe("ISANFT - Lifecycle & Management", function () {
 
     it("Should emit Revealed event", async function () {
       await expect(isaNFT.reveal())
-        .to.emit(isaNFT, "Revealed");
+        .to.emit(isaNFT, "RevealStatusChanged");
     });
 
     it("Should not allow non-metadata role to update URIs", async function () {
@@ -63,7 +63,7 @@ describe("ISANFT - Lifecycle & Management", function () {
   describe("Royalties (EIP-2981)", function () {
     it("Should return correct royalty info", async function () {
       const salePrice = ethers.utils.parseEther("1.0");
-      const expectedRoyalty = salePrice.mul(500).div(10000); // 5%
+      const expectedRoyalty = salePrice.mul(750).div(10000); // 7.5%
       
       const [receiver, royaltyAmount] = await isaNFT.royaltyInfo(1, salePrice);
       
@@ -72,14 +72,14 @@ describe("ISANFT - Lifecycle & Management", function () {
     });
 
     it("Should allow royalty admin to update recipient", async function () {
-      await isaNFT.setRoyaltyRecipient(addr1.address);
+      await isaNFT.setRoyalty(addr1.address, 750);
       
       const [receiver] = await isaNFT.royaltyInfo(1, ethers.utils.parseEther("1.0"));
       expect(receiver).to.equal(addr1.address);
     });
 
     it("Should allow royalty admin to update fee", async function () {
-      await isaNFT.setRoyaltyFee(1000); // 10%
+      await isaNFT.setRoyalty(royaltyRecipient.address, 1000); // 10%
       
       const salePrice = ethers.utils.parseEther("1.0");
       const expectedRoyalty = salePrice.mul(1000).div(10000);
@@ -90,13 +90,13 @@ describe("ISANFT - Lifecycle & Management", function () {
 
     it("Should reject royalty fee above max", async function () {
       await expect(
-        isaNFT.setRoyaltyFee(1001) // Above 10%
+        isaNFT.setRoyalty(royaltyRecipient.address, 1001) // Above 10%
       ).to.be.revertedWith("ISANFT: royalty fee too high");
     });
 
     it("Should not allow non-royalty role to update", async function () {
       await expect(
-        isaNFT.connect(addr1).setRoyaltyFee(500)
+        isaNFT.connect(addr1).setRoyalty(addr1.address, 500)
       ).to.be.reverted;
     });
   });
