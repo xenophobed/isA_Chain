@@ -209,4 +209,28 @@ contract ISAAgentLeaseRegistry {
     function getAuditBatchCount() external view returns (uint256) {
         return auditBatchHistory.length;
     }
+
+    /**
+     * @notice Verifies whether a leaf hash belongs to an anchored audit batch using a Merkle proof.
+     */
+    function verifyAuditProof(
+        bytes32 batchId,
+        bytes32 leaf,
+        bytes32[] calldata proof
+    ) external view returns (bool) {
+        bytes32 root = auditBatches[batchId].merkleRoot;
+        if (root == bytes32(0)) {
+            return false;
+        }
+        bytes32 computedHash = leaf;
+        for (uint256 i = 0; i < proof.length; i++) {
+            bytes32 proofElement = proof[i];
+            if (computedHash <= proofElement) {
+                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
+            } else {
+                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+            }
+        }
+        return computedHash == root;
+    }
 }
