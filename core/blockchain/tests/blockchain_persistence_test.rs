@@ -4,9 +4,9 @@
 //!   cargo test --manifest-path core/blockchain/Cargo.toml --test blockchain_persistence_test 2>&1 | tail -30
 
 use isa_chain_core::{
-    Blockchain,
+    Account, Blockchain,
     block::{Block, ConsensusData, StakeData},
-    storage::RocksDbStorage,
+    storage::{RocksDbStorage, Storage},
     types::{Address, Hash, constants},
 };
 
@@ -170,4 +170,65 @@ fn test_account_state_persists() {
             .expect("alice should be persisted");
         assert_eq!(acc.balance, 42_000);
     }
+}
+
+fn check_credit_after_restart(credit: impl FnOnce(&mut Blockchain, Address)) {
+    let dir = tempfile::tempdir().unwrap();
+    let recipient = Address::from([0x47; 20]);
+    let mut account = Account::new_external(40);
+    account.nonce = 3;
+    Blockchain::new_with_storage(constants::TEST_CHAIN_ID, open_storage(&dir)).unwrap();
+    open_storage(&dir).put_account(recipient, account.clone()).unwrap();
+
+    {
+        let mut chain = Blockchain::new_with_storage(constants::TEST_CHAIN_ID, open_storage(&dir)).unwrap();
+        assert!(chain.get_account(&recipient).is_none());
+        credit(&mut chain, recipient);
+        account.balance += 2;
+        assert_eq!(chain.get_account(&recipient), Some(&account));
+    }
+    assert_eq!(open_storage(&dir).get_account(&recipient).unwrap(), Some(account));
+}
+
+#[test]
+fn mint_credits_the_persisted_account_after_restart() {
+    check_credit_after_restart(|chain, recipient| chain.mint(recipient, 2));
+}
+
+#[test]
+fn faucet_credits_the_persisted_account_after_restart() {
+    check_credit_after_restart(|chain, recipient| {
+        let faucet = Address::from([0xFA; 20]);
+        let before = chain.get_balance(&faucet);
+        assert_eq!(chain.faucet_transfer(recipient, 2), Ok(42));
+        assert_eq!(chain.get_balance(&faucet), before - 2);
+    });
+}
+
+#[test]
+fn faucet_transfer_to_itself_preserves_the_balance() {
+    let dir = tempfile::tempdir().unwrap();
+    let faucet = Address::from([0xFA; 20]);
+    let mut chain = Blockchain::new_with_storage(constants::TEST_CHAIN_ID, open_storage(&dir)).unwrap();
+    let before = chain.get_balance(&faucet);
+    assert_eq!(chain.faucet_transfer(faucet, 2), Ok(before));
+    drop(chain);
+    assert_eq!(open_storage(&dir).get_account(&faucet).unwrap().unwrap().balance, before);
+}
+
+#[test]
+fn rejected_credit_leaves_both_balances_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let faucet = Address::from([0xFA; 20]);
+    let recipient = Address::from([0x47; 20]);
+    let mut chain = Blockchain::new_with_storage(constants::TEST_CHAIN_ID, open_storage(&dir)).unwrap();
+    chain.mint(recipient, u128::MAX);
+    let before = chain.get_balance(&faucet);
+    assert!(chain.faucet_transfer(recipient, 1).is_err());
+    assert_eq!(chain.get_balance(&faucet), before);
+    assert_eq!(chain.get_balance(&recipient), u128::MAX);
+    drop(chain);
+    let db = open_storage(&dir);
+    assert_eq!(db.get_account(&faucet).unwrap().unwrap().balance, before);
+    assert_eq!(db.get_account(&recipient).unwrap().unwrap().balance, u128::MAX);
 }

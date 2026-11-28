@@ -38,6 +38,19 @@ impl RocksDbStorage {
             .cf_handle(name)
             .ok_or_else(|| StorageError::ColumnFamilyNotFound(name.to_string()))
     }
+
+    pub(crate) fn put_accounts(
+        &mut self,
+        accounts: &[(Address, Account)],
+    ) -> Result<(), StorageError> {
+        let cf = self.cf(CF_ACCOUNTS)?;
+        let mut batch = rocksdb::WriteBatch::default();
+        for (address, account) in accounts {
+            batch.put_cf(cf, address.as_bytes(), bincode::serialize(account)?);
+        }
+        self.db.write(batch)?;
+        Ok(())
+    }
 }
 
 impl Storage for RocksDbStorage {
@@ -126,10 +139,7 @@ impl Storage for RocksDbStorage {
     }
 
     fn put_account(&mut self, address: Address, account: Account) -> Result<(), StorageError> {
-        let encoded = bincode::serialize(&account)?;
-        let cf = self.cf(CF_ACCOUNTS)?;
-        self.db.put_cf(cf, address.as_bytes(), &encoded)?;
-        Ok(())
+        self.put_accounts(&[(address, account)])
     }
 
     fn put_metadata(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
