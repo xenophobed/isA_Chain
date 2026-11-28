@@ -3,7 +3,6 @@ use crate::account::{WalletAccount, AccountType};
 use crate::mnemonic::Mnemonic;
 use crate::storage::{WalletStorage, Storage};
 use crate::error::*;
-use crate::crypto::EncryptionKey;
 
 use isa_chain_core::types::*;
 use isa_chain_core::transaction::{Transaction, TransactionData};
@@ -11,7 +10,7 @@ use isa_chain_core::crypto::KeyPair;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// Main wallet structure
 pub struct Wallet {
@@ -31,7 +30,7 @@ pub struct Wallet {
     accounts: HashMap<Address, WalletAccount>,
 
     /// Storage backend
-    storage: Box<dyn Storage>,
+    storage: WalletStorage,
 
     /// Current account index for derivation
     account_index: u32,
@@ -72,6 +71,16 @@ pub enum WalletType {
     WatchOnly,
 }
 
+impl WalletType {
+    fn account_path(&self, index: u32) -> Result<String, WalletError> {
+        match self {
+            Self::Hierarchical if index < (1 << 31) => Ok(format!("m/44'/60'/0'/0/{index}")),
+            Self::SingleKey if index == 0 => Ok("m".into()),
+            _ => Err(WalletError::UnsupportedOperation("Wallet cannot derive another account".into())),
+        }
+    }
+}
+
 /// Hardware wallet types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum HardwareType {
@@ -93,7 +102,7 @@ pub struct NetworkConfig {
 }
 
 /// Wallet creation parameters
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WalletParams {
     pub name: String,
     pub password: String,
@@ -104,11 +113,23 @@ pub struct WalletParams {
 }
 
 /// Transaction signing parameters
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SigningParams {
     pub from: Address,
     pub password: String,
     pub transaction: Transaction,
+}
+
+impl std::fmt::Debug for WalletParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalletParams").field("wallet_type", &self.wallet_type).finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for SigningParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SigningParams").field("from", &self.from).finish_non_exhaustive()
+    }
 }
 
 impl Wallet {
@@ -118,7 +139,7 @@ impl Wallet {
         
         // Generate or import mnemonic
         let mnemonic = match params.mnemonic {
-            Some(words) => Mnemonic::from_phrase(&words)?,
+            Some(words) => Mnemonic::from_phrase(&Zeroizing::new(words))?,
             None => Mnemonic::generate(params.entropy_length.unwrap_or(128))?,
         };
         
@@ -153,8 +174,7 @@ impl Wallet {
         };
         
         // Create storage
-        let storage_path = format!("wallets/{}", wallet_id);
-        let storage: Box<dyn Storage> = Box::new(WalletStorage::new(&storage_path)?);
+        let storage = WalletStorage::create_wallet(&wallet_id)?;
         
         let mut wallet = Wallet {
             id: wallet_id,
@@ -170,16 +190,12 @@ impl Wallet {
         // Generate first account
         wallet.derive_next_account().await?;
         
-        // Save wallet to storage
-        wallet.save().await?;
-        
         Ok(wallet)
     }
     
     /// Load wallet from storage
     pub async fn load(wallet_id: &str, password: &str) -> Result<Self, WalletError> {
-        let storage_path = format!("wallets/{}", wallet_id);
-        let storage: Box<dyn Storage> = Box::new(WalletStorage::new(&storage_path)?);
+        let storage = WalletStorage::open_existing(&WalletStorage::wallet_path(wallet_id)?)?;
         
         // Load wallet metadata
         let wallet_data = storage.load_wallet_data().await?;
@@ -189,6 +205,16 @@ impl Wallet {
         
         // Load accounts
         let accounts = storage.load_accounts().await?;
+        if accounts.is_empty() || accounts.len() != wallet_data.account_index as usize {
+            return Err(WalletError::StorageError("Inconsistent wallet account count".into()));
+        }
+        for index in 0..wallet_data.account_index {
+            let path = wallet_data.wallet_type.account_path(index)?;
+            let address = keystore.derive_key(&path)?.address;
+            if accounts.get(&address).map(|account| &account.derivation_path) != Some(&path) {
+                return Err(WalletError::StorageError("Account does not match its recovery path".into()));
+            }
+        }
         
         Ok(Wallet {
             id: wallet_id.to_string(),
@@ -204,8 +230,8 @@ impl Wallet {
     
     /// Derive next account
     pub async fn derive_next_account(&mut self) -> Result<WalletAccount, WalletError> {
-        let derivation_path = format!("m/44'/60'/0'/0/{}", self.account_index);
-        
+        let derivation_path = self.wallet_type.account_path(self.account_index)?;
+
         let keypair = self.keystore.derive_key(&derivation_path)?;
         
         let account = WalletAccount::new(
@@ -216,11 +242,16 @@ impl Wallet {
             0, // Initial balance
         );
         
+        if self.accounts.contains_key(&account.address) {
+            return Err(WalletError::StorageError("Derived account is already recorded".into()));
+        }
         self.accounts.insert(account.address, account.clone());
         self.account_index += 1;
-        
-        // Save updated wallet
-        self.save().await?;
+        if let Err(error) = self.save().await {
+            self.accounts.remove(&account.address);
+            self.account_index -= 1;
+            return Err(error);
+        }
         
         Ok(account)
     }
@@ -237,7 +268,8 @@ impl Wallet {
     
     /// Get primary account (first account)
     pub fn get_primary_account(&self) -> Option<&WalletAccount> {
-        self.accounts.values().next()
+        let primary = self.wallet_type.account_path(0).ok()?;
+        self.accounts.values().find(|a| a.derivation_path == primary)
     }
     
     /// Sign transaction
@@ -246,12 +278,14 @@ impl Wallet {
         let account = self.get_account(&params.from)
             .ok_or(WalletError::AccountNotFound(params.from))?;
         
-        // Get private key for account
-        let private_key = self.keystore.get_private_key(&account.derivation_path, &params.password)?;
+        if params.transaction.from != params.from {
+            return Err(WalletError::SigningError("Sender does not match signing account".into()));
+        }
+        let private_key = Zeroizing::new(self.keystore.get_private_key(&account.derivation_path, &params.password)?);
         
         // Sign transaction
         let mut transaction = params.transaction;
-        transaction.sign(&private_key)
+        transaction.sign(&*private_key)
             .map_err(|e| WalletError::SigningError(e.to_string()))?;
         
         Ok(transaction)
@@ -286,8 +320,8 @@ impl Wallet {
         );
         
         // Sign transaction
-        let private_key = self.keystore.get_private_key(&account.derivation_path, password)?;
-        transaction.sign(&private_key)
+        let private_key = Zeroizing::new(self.keystore.get_private_key(&account.derivation_path, password)?);
+        transaction.sign(&*private_key)
             .map_err(|e| WalletError::SigningError(e.to_string()))?;
         
         Ok(transaction)
@@ -295,22 +329,26 @@ impl Wallet {
     
     /// Update account balance
     pub async fn update_account_balance(&mut self, address: Address, balance: Amount) -> Result<(), WalletError> {
-        if let Some(account) = self.accounts.get_mut(&address) {
-            account.balance = balance;
-            self.save().await?;
-        }
-        Ok(())
+        self.update_account(address, |account| account.balance = balance).await
     }
-    
+
     /// Update account nonce
     pub async fn update_account_nonce(&mut self, address: Address, nonce: u64) -> Result<(), WalletError> {
+        self.update_account(address, |account| account.nonce = nonce).await
+    }
+
+    async fn update_account(&mut self, address: Address, update: impl FnOnce(&mut WalletAccount)) -> Result<(), WalletError> {
         if let Some(account) = self.accounts.get_mut(&address) {
-            account.nonce = nonce;
-            self.save().await?;
+            let previous = account.clone();
+            update(account);
+            if let Err(error) = self.save().await {
+                self.accounts.insert(address, previous);
+                return Err(error);
+            }
         }
         Ok(())
     }
-    
+
     /// Export wallet (mnemonic or private key)
     pub fn export(&self, password: &str) -> Result<WalletExport, WalletError> {
         match self.wallet_type {
@@ -328,14 +366,9 @@ impl Wallet {
     
     /// Change wallet password
     pub async fn change_password(&mut self, old_password: &str, new_password: &str) -> Result<(), WalletError> {
-        // Verify old password by attempting to decrypt
-        self.keystore.verify_password(old_password)?;
-        
-        // Re-encrypt with new password
-        self.keystore.change_password(old_password, new_password)?;
-        
-        // Save updated keystore
-        self.save().await?;
+        let keystore = self.keystore.reencrypted(old_password, new_password)?;
+        self.save_keystore(&keystore).await?;
+        self.keystore = keystore;
         
         Ok(())
     }
@@ -348,18 +381,19 @@ impl Wallet {
     
     /// Save wallet to storage
     async fn save(&self) -> Result<(), WalletError> {
+        self.save_keystore(&self.keystore).await
+    }
+
+    async fn save_keystore(&self, keystore: &Keystore) -> Result<(), WalletError> {
         let wallet_data = WalletData {
             name: self.name.clone(),
             wallet_type: self.wallet_type.clone(),
-            keystore_data: self.keystore.export()?,
+            keystore_data: keystore.export()?,
             account_index: self.account_index,
             network: self.network.clone(),
         };
         
-        self.storage.save_wallet_data(&wallet_data).await?;
-        self.storage.save_accounts(&self.accounts).await?;
-        
-        Ok(())
+        self.storage.save_snapshot(&wallet_data, &self.accounts).await
     }
     
     /// Get wallet info
@@ -376,11 +410,17 @@ impl Wallet {
 }
 
 /// Wallet export formats
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum WalletExport {
     Mnemonic(String),
     PrivateKey(String),
     Keystore(String),
+}
+
+impl std::fmt::Debug for WalletExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalletExport").finish_non_exhaustive()
+    }
 }
 
 /// Wallet storage data
@@ -451,6 +491,9 @@ mod tests {
         assert_eq!(wallet.name, "Test Wallet");
         assert_eq!(wallet.wallet_type, WalletType::Hierarchical);
         assert!(!wallet.accounts.is_empty());
+        let created_path = WalletStorage::wallet_path(&wallet.id).unwrap();
+        wallet.delete().await.unwrap();
+        std::fs::remove_dir_all(created_path).unwrap();
     }
     
     #[tokio::test]
@@ -477,5 +520,8 @@ mod tests {
         let new_account = wallet.derive_next_account().await.unwrap();
         assert_eq!(wallet.accounts.len(), initial_count + 1);
         assert!(wallet.accounts.contains_key(&new_account.address));
+        let created_path = WalletStorage::wallet_path(&wallet.id).unwrap();
+        wallet.delete().await.unwrap();
+        std::fs::remove_dir_all(created_path).unwrap();
     }
 }
