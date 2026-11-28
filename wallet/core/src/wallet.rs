@@ -108,6 +108,7 @@ pub struct WalletParams {
     pub password: String,
     pub wallet_type: WalletType,
     pub network: NetworkConfig,
+    /// Optional BIP39 recovery phrase for a hierarchical wallet.
     pub mnemonic: Option<String>,
     pub entropy_length: Option<usize>,
 }
@@ -139,7 +140,15 @@ impl Wallet {
         
         // Generate or import mnemonic
         let mnemonic = match params.mnemonic {
-            Some(words) => Mnemonic::from_phrase(&Zeroizing::new(words))?,
+            Some(words) => {
+                let words = Zeroizing::new(words);
+                if params.wallet_type == WalletType::SingleKey {
+                    return Err(WalletError::UnsupportedOperation(
+                        "Single-key wallets do not support recovery from a mnemonic".into(),
+                    ));
+                }
+                Mnemonic::from_phrase(&words)?
+            }
             None => Mnemonic::generate(params.entropy_length.unwrap_or(128))?,
         };
         

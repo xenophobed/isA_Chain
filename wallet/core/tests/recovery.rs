@@ -122,6 +122,16 @@ fn exported_keystore_is_authenticated_and_legacy_empty_exports_fail() {
 }
 
 #[tokio::test]
+async fn single_key_wallet_rejects_a_recovery_phrase() {
+    let mut params = wallet_params(Some(Mnemonic::generate(128).unwrap().phrase()), "disposable");
+    params.wallet_type = WalletType::SingleKey;
+    assert!(matches!(
+        Wallet::create(params).await,
+        Err(WalletError::UnsupportedOperation(_))
+    ));
+}
+
+#[tokio::test]
 async fn single_key_wallet_reopens_its_only_account() {
     let mut params = wallet_params(None, "single password");
     params.wallet_type = WalletType::SingleKey;
