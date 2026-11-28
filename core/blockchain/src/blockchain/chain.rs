@@ -9,6 +9,19 @@ use crate::treasury::ProtocolTreasury;
 use crate::types::*;
 use std::collections::HashMap;
 
+/// Publish the same account versions to storage and to the in-memory cache.
+fn write_accounts(
+    cache: &mut HashMap<Address, Account>,
+    storage: Option<&mut RocksDbStorage>,
+    updates: Vec<(Address, Account)>,
+) -> Result<(), StorageError> {
+    if let Some(db) = storage {
+        db.put_accounts(&updates)?;
+    }
+    cache.extend(updates);
+    Ok(())
+}
+
 /// Main blockchain state and logic
 pub struct Blockchain {
     /// Chain ID
@@ -116,12 +129,6 @@ impl Blockchain {
             let genesis = Block::genesis(chain_id);
             let genesis_hash = genesis.hash();
 
-            storage.put_block(genesis.clone())
-                .map_err(BlockchainError::Storage)?;
-
-            let mut blocks = HashMap::new();
-            blocks.insert(genesis_hash, genesis);
-
             // Populate accounts with initial genesis allocations
             let mut accounts = HashMap::new();
             let genesis_config = if chain_id == crate::types::constants::TEST_CHAIN_ID {
@@ -130,12 +137,15 @@ impl Blockchain {
                 crate::genesis::GenesisConfig::default_mainnet()
             };
 
-            for allocation in genesis_config.allocations {
-                let account = Account::new_external(allocation.amount);
-                storage.put_account(allocation.address, account.clone())
-                    .map_err(BlockchainError::Storage)?;
-                accounts.insert(allocation.address, account);
-            }
+            let allocations = genesis_config.allocations.into_iter()
+                .map(|allocation| (allocation.address, Account::new_external(allocation.amount)))
+                .collect();
+            write_accounts(&mut accounts, Some(&mut storage), allocations)?;
+
+            // The stored height tells the next opener that genesis is complete.
+            storage.put_block(genesis.clone())?;
+            let mut blocks = HashMap::new();
+            blocks.insert(genesis_hash, genesis);
 
             Ok(Blockchain {
                 chain_id,
@@ -168,16 +178,33 @@ impl Blockchain {
 
     /// Look up an account, checking persistent storage on a cache miss.
     pub fn get_account_mut_or_load(&mut self, address: &Address) -> Option<Account> {
+        self.load_account(address).ok().flatten()
+    }
+
+    fn load_account(&mut self, address: &Address) -> Result<Option<Account>, StorageError> {
         if let Some(acc) = self.accounts.get(address) {
-            return Some(acc.clone());
+            return Ok(Some(acc.clone()));
         }
-        if let Some(ref mut db) = self.storage {
-            if let Ok(Some(acc)) = db.get_account(address) {
+        if let Some(db) = &self.storage {
+            if let Some(acc) = db.get_account(address)? {
                 self.accounts.insert(*address, acc.clone());
-                return Some(acc);
+                return Ok(Some(acc));
             }
         }
-        None
+        Ok(None)
+    }
+
+    fn credited_account(
+        &mut self,
+        address: Address,
+        amount: Amount,
+    ) -> Result<Account, &'static str> {
+        let mut account = self.load_account(&address)
+            .map_err(|_| "Could not read account")?
+            .unwrap_or_else(|| Account::new_external(0));
+        account.balance = account.balance.checked_add(amount)
+            .ok_or("Account balance overflow")?;
+        Ok(account)
     }
 
     pub fn get_height(&self) -> BlockHeight {
@@ -206,44 +233,38 @@ impl Blockchain {
     /// Initialize accounts with balance (for testing / genesis setup).
     /// This bypasses token authority checks.
     pub fn mint(&mut self, address: Address, amount: Amount) {
-        self.accounts.entry(address)
-            .and_modify(|acc| acc.balance += amount)
-            .or_insert_with(|| Account::new_external(amount));
-
-        if let Some(ref mut db) = self.storage {
-            if let Some(acc) = self.accounts.get(&address) {
-                let _ = db.put_account(address, acc.clone());
-            }
+        let result = self.credited_account(address, amount).and_then(|account| {
+            write_accounts(&mut self.accounts, self.storage.as_mut(), vec![(address, account)])
+                .map_err(|_| "Could not persist account")
+        });
+        if let Err(reason) = result {
+            tracing::error!(%reason, "Failed to mint setup balance");
         }
     }
 
     /// Transfer tokens from the genesis faucet account (for testnet faucet dripping).
     pub fn faucet_transfer(&mut self, to: Address, amount: Amount) -> Result<Amount, &'static str> {
         let faucet = Address::from([0xFA; 20]);
-        let mut faucet_acc = self.get_account_mut_or_load(&faucet)
+        let mut faucet_acc = self.load_account(&faucet)
+            .map_err(|_| "Could not read faucet account")?
             .unwrap_or_else(|| Account::new_external(crate::types::constants::INITIAL_SUPPLY));
 
         if faucet_acc.balance < amount {
             faucet_acc.balance = crate::types::constants::INITIAL_SUPPLY;
         }
 
-        faucet_acc.balance -= amount;
-        self.accounts.insert(faucet, faucet_acc.clone());
-        if let Some(ref mut db) = self.storage {
-            let _ = db.put_account(faucet, faucet_acc);
-        }
-
-        self.accounts.entry(to)
-            .and_modify(|acc| acc.balance += amount)
-            .or_insert_with(|| Account::new_external(amount));
-
-        if let Some(ref mut db) = self.storage {
-            if let Some(acc) = self.accounts.get(&to) {
-                let _ = db.put_account(to, acc.clone());
-            }
-        }
-
-        Ok(self.get_balance(&to))
+        let remaining = faucet_acc.balance.checked_sub(amount)
+            .ok_or("Faucet balance insufficient")?;
+        let (balance, updates) = if to == faucet {
+            (faucet_acc.balance, vec![(faucet, faucet_acc)])
+        } else {
+            let recipient = self.credited_account(to, amount)?;
+            faucet_acc.balance = remaining;
+            (recipient.balance, vec![(faucet, faucet_acc), (to, recipient)])
+        };
+        write_accounts(&mut self.accounts, self.storage.as_mut(), updates)
+            .map_err(|_| "Could not persist faucet transfer")?;
+        Ok(balance)
     }
 
     // ----------------------------------------------------------------
