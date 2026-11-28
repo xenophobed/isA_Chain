@@ -81,7 +81,7 @@ impl Keystore {
                 let mnemonic = Self::parse_mnemonic(secret)?;
                 // Wallet passwords protect storage. They are independent of the BIP39 seed.
                 let seed = Zeroizing::new(mnemonic.to_seed_bytes(""));
-                XPrv::new(&*seed)
+                XPrv::new(seed.as_slice())
                     .map(RootKey::Hierarchical)
                     .map_err(|e| WalletError::CryptoError(e.to_string()))
             }
