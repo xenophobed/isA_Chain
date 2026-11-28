@@ -69,6 +69,7 @@ temp/
 # Blockchain data
 chaindata/
 keystore/
+wallets/
 
 # Service specific
 services/*/service.log

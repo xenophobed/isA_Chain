@@ -197,11 +197,19 @@ impl CryptoUtils {
 }
 
 /// Key pair for cryptographic operations
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KeyPair {
     pub private_key: [u8; 32],
     pub public_key: [u8; 33],
     pub address: Address,
+}
+
+impl std::fmt::Debug for KeyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyPair")
+            .field("address", &self.address)
+            .finish_non_exhaustive()
+    }
 }
 
 impl KeyPair {

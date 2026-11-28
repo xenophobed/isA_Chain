@@ -3,16 +3,19 @@ use bip39::{Language, Mnemonic as Bip39Mnemonic};
 use serde::{Deserialize, Serialize};
 
 /// Mnemonic phrase wrapper with security features.
-///
-/// Note: bip39 v2 does not implement `Zeroize` for `Mnemonic` or `Language`,
-/// so this wrapper stores them without automatic zeroize-on-drop.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Mnemonic {
     /// BIP39 mnemonic
     inner: Bip39Mnemonic,
 
     /// Number of entropy bits
     entropy_bits: usize,
+}
+
+impl std::fmt::Debug for Mnemonic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mnemonic").field("entropy_bits", &self.entropy_bits).finish_non_exhaustive()
+    }
 }
 
 /// Mnemonic strength levels
